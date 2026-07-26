@@ -432,9 +432,18 @@ async function saveUserToSupabase(user: User): Promise<void> {
         device_name: user.deviceName,
         last_active: user.lastActive,
       };
-      if (user.avatar) minPayload.avatar = user.avatar;
-      if (user.takaBalance !== undefined) minPayload.taka_balance = user.takaBalance;
-      await supabase.from('users').upsert(minPayload, { onConflict: 'email' });
+      let resMin = await supabase.from('users').upsert(minPayload, { onConflict: 'email' });
+      if (resMin.error) {
+        console.warn('Supabase user minimal upsert failed, trying bare columns:', resMin.error.message);
+        const barePayload: any = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          balance: user.balance,
+        };
+        await supabase.from('users').upsert(barePayload, { onConflict: 'email' });
+      }
     }
   } catch (err) {
     console.error('Supabase saveUserToSupabase error:', err);
@@ -534,40 +543,123 @@ async function saveTaskToSupabase(task: Task): Promise<void> {
 async function saveSubmissionToSupabase(sub: TaskSubmission): Promise<void> {
   if (!sub || !sub.id) return;
   try {
-    // Try full schema variation first (compatible with schema.sql)
-    const fullPayload: any = {
+    // Try Schema 1 (compatible with supabase_schema.sql where columns are proof_image, admin_comment)
+    const payload1: any = {
       id: sub.id,
-      task_id: sub.taskId,
       user_id: sub.userId,
-      user_name: sub.userName || '',
-      user_email: sub.userEmail || '',
-      proof_image_url: sub.proofImageUrl || '',
+      task_id: sub.taskId,
       proof_image: sub.proofImageUrl || '',
       status: sub.status || 'pending',
-      rejection_reason: sub.rejectionReason || null,
       admin_comment: sub.rejectionReason || null,
       submitted_at: sub.submittedAt || new Date().toISOString(),
-      reviewed_at: sub.reviewedAt || null,
     };
-    let { error } = await supabase.from('task_submissions').upsert(fullPayload);
+    let { error } = await supabase.from('task_submissions').upsert(payload1);
     if (error) {
-      console.warn('Supabase task_submissions full upsert failed, trying minimal columns:', error.message);
-      // Fallback minimal variation (compatible with supabase_schema.sql)
-      const minPayload: any = {
+      console.warn('Supabase task_submissions schema 1 failed, trying schema 2:', error.message);
+      // Try Schema 2 (compatible with schema.sql where columns are proof_image_url, rejection_reason, user_name)
+      const payload2: any = {
         id: sub.id,
-        user_id: sub.userId,
         task_id: sub.taskId,
-        proof_image: sub.proofImageUrl || '',
+        user_id: sub.userId,
+        user_name: sub.userName || '',
+        user_email: sub.userEmail || '',
+        proof_image_url: sub.proofImageUrl || '',
         status: sub.status || 'pending',
-        admin_comment: sub.rejectionReason || null,
+        rejection_reason: sub.rejectionReason || null,
         submitted_at: sub.submittedAt || new Date().toISOString(),
+        reviewed_at: sub.reviewedAt || null,
       };
-      if (sub.proofImageUrl) minPayload.proof_image_url = sub.proofImageUrl;
-      if (sub.rejectionReason) minPayload.rejection_reason = sub.rejectionReason;
-      await supabase.from('task_submissions').upsert(minPayload);
+      const res2 = await supabase.from('task_submissions').upsert(payload2);
+      if (res2.error) {
+        console.warn('Supabase task_submissions schema 2 failed, trying minimal core columns:', res2.error.message);
+        const payload3: any = {
+          id: sub.id,
+          user_id: sub.userId,
+          task_id: sub.taskId,
+          status: sub.status || 'pending',
+          submitted_at: sub.submittedAt || new Date().toISOString(),
+        };
+        await supabase.from('task_submissions').upsert(payload3);
+      }
     }
   } catch (err) {
     console.error('Supabase saveSubmissionToSupabase error:', err);
+  }
+}
+
+// Helper: Save Referral to Supabase
+async function saveReferralToSupabase(ref: ReferralRecord): Promise<void> {
+  if (!ref || !ref.id) return;
+  try {
+    // Try Schema 1 (schema.sql)
+    const payload1: any = {
+      id: ref.id,
+      referrer_id: ref.referrerId,
+      referred_user_id: ref.referredUserId,
+      referred_user_name: ref.referredUserName || '',
+      referred_user_email: ref.referredUserEmail || '',
+      referred_device_id: ref.referredDeviceId || '',
+      referred_device_name: ref.referredDeviceName || '',
+      is_first_referral: Boolean(ref.isFirstReferral),
+      status: ref.status || 'pending',
+      failure_reason: ref.failureReason || null,
+      created_at: ref.createdAt || new Date().toISOString(),
+      verified_at: ref.verifiedAt || null,
+    };
+    let { error } = await supabase.from('referrals').upsert(payload1);
+    if (error) {
+      // Try Schema 2 (supabase_schema.sql)
+      const payload2: any = {
+        id: ref.id,
+        referrer_id: ref.referrerId,
+        referee_id: ref.referredUserId,
+        referee_name: ref.referredUserName || '',
+        reward_amount: ref.isFirstReferral ? 5000 : 0,
+        status: ref.status === 'verified' ? 'rewarded' : (ref.status === 'failed' ? 'flagged' : 'pending'),
+        created_at: ref.createdAt || new Date().toISOString(),
+      };
+      await supabase.from('referrals').upsert(payload2);
+    }
+  } catch (err) {
+    console.error('Supabase saveReferralToSupabase error:', err);
+  }
+}
+
+// Helper: Save Withdrawal to Supabase
+async function saveWithdrawalToSupabase(w: WithdrawalRecord): Promise<void> {
+  if (!w || !w.id) return;
+  try {
+    const payload: any = {
+      id: w.id,
+      user_id: w.userId,
+      user_name: w.userName || '',
+      user_email: w.userEmail || '',
+      payment_method: w.paymentMethod,
+      account_number: w.accountNumber,
+      coins_amount: w.coinsAmount || 0,
+      taka_amount: w.takaAmount || 0,
+      withdraw_type: w.withdrawType || 'coins',
+      status: w.status || 'pending',
+      rejection_reason: w.rejectionReason || null,
+      requested_at: w.requestedAt || new Date().toISOString(),
+      processed_at: w.processedAt || null,
+    };
+    let { error } = await supabase.from('withdrawals').upsert(payload);
+    if (error) {
+      const minPayload: any = {
+        id: w.id,
+        user_id: w.userId,
+        payment_method: w.paymentMethod,
+        account_number: w.accountNumber,
+        coins_amount: w.coinsAmount || 0,
+        taka_amount: w.takaAmount || 0,
+        status: w.status || 'pending',
+        requested_at: w.requestedAt || new Date().toISOString(),
+      };
+      await supabase.from('withdrawals').upsert(minPayload);
+    }
+  } catch (err) {
+    console.error('Supabase saveWithdrawalToSupabase error:', err);
   }
 }
 
@@ -881,6 +973,10 @@ app.post('/api/auth/register', async (req, res) => {
       }
 
       mockReferrals.push(refRecord);
+      await saveReferralToSupabase(refRecord);
+      if (isFirst) {
+        await saveUserToSupabase(referrer);
+      }
     }
   }
 
@@ -1371,7 +1467,7 @@ app.get('/api/referrals/my/:userId', async (req, res) => {
   const now = Date.now();
   const referrals = mockReferrals.filter(r => r.referrerId === userId);
 
-  referrals.forEach(ref => {
+  for (const ref of referrals) {
     if (ref.status === 'pending') {
       const referredUser = mockUsers.get(ref.referredUserId);
       if (referredUser) {
@@ -1392,14 +1488,17 @@ app.get('/api/referrals/my/:userId', async (req, res) => {
           ref.verifiedAt = new Date().toISOString();
           // Credit 10 Taka for verified referral
           user.takaBalance = (user.takaBalance || 0) + 10;
+          await saveReferralToSupabase(ref);
+          await saveUserToSupabase(user);
         } else if (elapsedHours >= 12) {
           // If 12 hours passed without meeting conditions, mark failed
           ref.status = 'failed';
           ref.failureReason = 'Did not meet activity requirements (10h active dashboard or task + 200 NXB balance) within 12 hours.';
+          await saveReferralToSupabase(ref);
         }
       }
     }
-  });
+  }
 
   res.json({
     success: true,
@@ -1584,7 +1683,30 @@ app.get('/api/admin/submissions', async (req, res) => {
 
 app.post('/api/admin/submissions/review', async (req, res) => {
   const { submissionId, status, rejectionReason } = req.body;
-  const sub = mockSubmissions.find(s => s.id === submissionId);
+  let sub = mockSubmissions.find(s => s.id === submissionId);
+
+  if (!sub) {
+    try {
+      const { data: dbSub } = await supabase.from('task_submissions').select('*').eq('id', submissionId).maybeSingle();
+      if (dbSub) {
+        sub = {
+          id: dbSub.id,
+          taskId: dbSub.task_id,
+          userId: dbSub.user_id,
+          userName: dbSub.user_name || '',
+          userEmail: dbSub.user_email || '',
+          proofImageUrl: dbSub.proof_image_url || dbSub.proof_image || '',
+          status: dbSub.status || 'pending',
+          rejectionReason: dbSub.rejection_reason || dbSub.admin_comment || undefined,
+          submittedAt: dbSub.submitted_at || new Date().toISOString(),
+          reviewedAt: dbSub.reviewed_at || undefined,
+        };
+        mockSubmissions.push(sub);
+      }
+    } catch (err) {
+      console.error('Supabase fetch sub by id error:', err);
+    }
+  }
 
   if (!sub) {
     return res.status(404).json({ error: 'Submission not found' });
@@ -1774,24 +1896,7 @@ app.post('/api/withdraw/request', async (req, res) => {
   };
 
   mockWithdrawals.push(withdrawalRecord);
-
-  // Persist in Supabase
-  try {
-    await supabase.from('withdrawals').upsert({
-      id: withdrawalRecord.id,
-      user_id: withdrawalRecord.userId,
-      user_name: withdrawalRecord.userName,
-      user_email: withdrawalRecord.userEmail,
-      payment_method: withdrawalRecord.paymentMethod,
-      account_number: withdrawalRecord.accountNumber,
-      coins_amount: withdrawalRecord.coinsAmount,
-      taka_amount: withdrawalRecord.takaAmount,
-      status: withdrawalRecord.status,
-      requested_at: withdrawalRecord.requestedAt,
-    });
-  } catch (err) {
-    console.error('Supabase save withdrawal error:', err);
-  }
+  await saveWithdrawalToSupabase(withdrawalRecord);
 
   res.json({
     success: true,
@@ -1872,7 +1977,33 @@ app.get('/api/admin/withdrawals', async (req, res) => {
 app.post('/api/admin/withdrawals/review', async (req, res) => {
   const { withdrawalId, status, rejectionReason } = req.body;
 
-  const wRecord = mockWithdrawals.find(w => w.id === withdrawalId);
+  let wRecord = mockWithdrawals.find(w => w.id === withdrawalId);
+  if (!wRecord) {
+    try {
+      const { data: dbWth } = await supabase.from('withdrawals').select('*').eq('id', withdrawalId).maybeSingle();
+      if (dbWth) {
+        wRecord = {
+          id: dbWth.id,
+          userId: dbWth.user_id,
+          userName: dbWth.user_name || '',
+          userEmail: dbWth.user_email || '',
+          paymentMethod: dbWth.payment_method,
+          accountNumber: dbWth.account_number,
+          coinsAmount: Number(dbWth.coins_amount) || 0,
+          takaAmount: Number(dbWth.taka_amount) || 0,
+          withdrawType: dbWth.withdraw_type || 'coins',
+          status: dbWth.status || 'pending',
+          rejectionReason: dbWth.rejection_reason || undefined,
+          requestedAt: dbWth.requested_at || new Date().toISOString(),
+          processedAt: dbWth.processed_at || undefined,
+        };
+        mockWithdrawals.push(wRecord);
+      }
+    } catch (err) {
+      console.error('Supabase fetch wRecord error:', err);
+    }
+  }
+
   if (wRecord) {
     wRecord.status = status;
     wRecord.processedAt = new Date().toISOString();
@@ -1886,23 +2017,7 @@ app.post('/api/admin/withdrawals/review', async (req, res) => {
         await saveUserToSupabase(user);
       }
     }
-  }
-
-  try {
-    await supabase.from('withdrawals').update({
-      status,
-      rejection_reason: rejectionReason || null,
-      processed_at: new Date().toISOString(),
-    }).eq('id', withdrawalId);
-
-    if (status === 'rejected' && wRecord) {
-      const user = await getUserById(wRecord.userId);
-      if (user) {
-        await supabase.from('users').update({ balance: user.balance }).eq('id', user.id);
-      }
-    }
-  } catch (err) {
-    console.error('Supabase review withdrawal error:', err);
+    await saveWithdrawalToSupabase(wRecord);
   }
 
   res.json({ success: true, message: `Withdrawal request ${status}` });
