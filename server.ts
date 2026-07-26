@@ -88,7 +88,7 @@ const adminUser: User = {
   name: 'NXB Admin',
   email: 'hello.alihosen@gmail.com',
   role: 'admin',
-  balance: 10000,
+  balance: 3000,
   energy: 1000,
   maxEnergy: 1000,
   energyLevel: 1,
@@ -317,24 +317,20 @@ async function getUserById(userIdOrEmail: string): Promise<User | null> {
   if (!userIdOrEmail) return null;
   const cleanStr = String(userIdOrEmail).toLowerCase().trim();
 
-  // 1. Memory lookup
-  let user = mockUsers.get(userIdOrEmail) || mockUsers.get(cleanStr);
-  if (user) return user;
-
-  // 2. Supabase lookup
+  // 1. Supabase lookup FIRST (Primary source of truth!)
   try {
     const { data: dbUser } = await supabase
       .from('users')
       .select('*')
-      .or(`id.eq.${userIdOrEmail},email.eq.${cleanStr},referral_code.eq.${userIdOrEmail}`)
+      .or(`id.eq.${userIdOrEmail},email.ilike.${cleanStr},referral_code.ilike.${userIdOrEmail}`)
       .maybeSingle();
 
     if (dbUser) {
-      user = {
+      const user: User = {
         id: dbUser.id,
         name: dbUser.name,
         email: dbUser.email,
-        role: dbUser.role || 'user',
+        role: ADMIN_EMAILS.includes(dbUser.email.toLowerCase()) ? 'admin' : (dbUser.role || 'user'),
         balance: Number(dbUser.balance) || 0,
         takaBalance: Number(dbUser.taka_balance) || 0,
         energy: dbUser.energy || 1000,
@@ -363,6 +359,10 @@ async function getUserById(userIdOrEmail: string): Promise<User | null> {
   } catch (err) {
     console.error('Supabase getUserById error:', err);
   }
+
+  // 2. Memory fallback only if not found in database yet
+  let user = mockUsers.get(userIdOrEmail) || mockUsers.get(cleanStr);
+  if (user) return user;
 
   return null;
 }
@@ -745,36 +745,36 @@ app.post('/api/auth/login', async (req, res) => {
     const { data: dbUser } = await supabase
       .from('users')
       .select('*')
-      .eq('email', cleanEmail)
+      .ilike('email', cleanEmail)
       .maybeSingle();
 
     if (dbUser) {
       dbUserPassword = dbUser.password || '';
-      if (!user) {
-        user = {
-          id: dbUser.id,
-          name: dbUser.name,
-          email: dbUser.email,
-          role: ADMIN_EMAILS.includes(cleanEmail) ? 'admin' : (dbUser.role || 'user'),
-          balance: Number(dbUser.balance) || 0,
-          energy: dbUser.energy || 200,
-          maxEnergy: dbUser.max_energy || 200,
-          energyLevel: dbUser.energy_level || 1,
-          hitLevel: dbUser.hit_level || 1,
-          hitDamage: Number(dbUser.hit_damage) || 0.5,
-          subjectLevel: dbUser.subject_level || 1,
-          subjectHp: Number(dbUser.subject_hp) || 100,
-          subjectMaxHp: Number(dbUser.subject_max_hp) || 100,
-          referralCode: dbUser.referral_code || '',
-          referredBy: dbUser.referred_by || undefined,
-          deviceId: dbUser.device_id || '',
-          deviceName: dbUser.device_name || '',
-          lastActive: dbUser.last_active || new Date().toISOString(),
-          createdAt: dbUser.created_at || new Date().toISOString(),
-        };
-        mockUsers.set(user.id, user);
-        mockUsers.set(cleanEmail, user);
-      }
+      // Always use real database user as source of truth!
+      user = {
+        id: dbUser.id,
+        name: dbUser.name,
+        email: dbUser.email,
+        role: ADMIN_EMAILS.includes(cleanEmail) ? 'admin' : (dbUser.role || 'user'),
+        balance: Number(dbUser.balance) || 0,
+        takaBalance: Number(dbUser.taka_balance) || 0,
+        energy: dbUser.energy || 200,
+        maxEnergy: dbUser.max_energy || 200,
+        energyLevel: dbUser.energy_level || 1,
+        hitLevel: dbUser.hit_level || 1,
+        hitDamage: Number(dbUser.hit_damage) || 0.5,
+        subjectLevel: dbUser.subject_level || 1,
+        subjectHp: Number(dbUser.subject_hp) || 100,
+        subjectMaxHp: Number(dbUser.subject_max_hp) || 100,
+        referralCode: dbUser.referral_code || '',
+        referredBy: dbUser.referred_by || undefined,
+        deviceId: dbUser.device_id || '',
+        deviceName: dbUser.device_name || '',
+        lastActive: dbUser.last_active || new Date().toISOString(),
+        createdAt: dbUser.created_at || new Date().toISOString(),
+      };
+      mockUsers.set(user.id, user);
+      mockUsers.set(cleanEmail, user);
     }
   } catch (err) {
     console.error('Supabase fetch login user error:', err);
@@ -1181,8 +1181,60 @@ app.get('/api/referrals/my/:userId', async (req, res) => {
 });
 
 // 12. Leaderboard
-app.get('/api/leaderboard', (req, res) => {
-  const allUsers = Array.from(new Set(mockUsers.values()))
+app.get('/api/leaderboard', async (req, res) => {
+  let allUsers: User[] = Array.from(new Set(mockUsers.values()));
+
+  try {
+    const { data: dbUsers } = await supabase
+      .from('users')
+      .select('*')
+      .order('balance', { ascending: false })
+      .limit(50);
+
+    if (dbUsers && dbUsers.length > 0) {
+      const dbMap = new Map<string, User>();
+      dbUsers.forEach(dbU => {
+        const mappedUser: User = {
+          id: dbU.id,
+          name: dbU.name,
+          email: dbU.email,
+          role: dbU.role || 'user',
+          balance: Number(dbU.balance) || 0,
+          takaBalance: Number(dbU.taka_balance) || 0,
+          energy: dbU.energy || 1000,
+          maxEnergy: dbU.max_energy || 1000,
+          energyLevel: dbU.energy_level || 1,
+          hitLevel: dbU.hit_level || 1,
+          hitDamage: Number(dbU.hit_damage) || 0.5,
+          subjectLevel: dbU.subject_level || 1,
+          subjectHp: Number(dbU.subject_hp) || 100,
+          subjectMaxHp: Number(dbU.subject_max_hp) || 100,
+          referralCode: dbU.referral_code || '',
+          referredBy: dbU.referred_by || undefined,
+          deviceId: dbU.device_id || '',
+          deviceName: dbU.device_name || '',
+          lastActive: dbU.last_active || new Date().toISOString(),
+          createdAt: dbU.created_at || new Date().toISOString(),
+        };
+        dbMap.set(mappedUser.id, mappedUser);
+        mockUsers.set(mappedUser.id, mappedUser);
+        if (mappedUser.email) mockUsers.set(mappedUser.email.toLowerCase(), mappedUser);
+      });
+
+      // Only add memory users if they don't exist in Database yet
+      mockUsers.forEach(mU => {
+        if (!dbMap.has(mU.id)) {
+          dbMap.set(mU.id, mU);
+        }
+      });
+
+      allUsers = Array.from(dbMap.values());
+    }
+  } catch (err) {
+    console.error('Supabase leaderboard error:', err);
+  }
+
+  const sorted = allUsers
     .sort((a, b) => b.balance - a.balance)
     .slice(0, 50)
     .map(u => ({
@@ -1192,7 +1244,7 @@ app.get('/api/leaderboard', (req, res) => {
       subjectLevel: u.subjectLevel,
     }));
 
-  res.json({ success: true, leaderboard: allUsers });
+  res.json({ success: true, leaderboard: sorted });
 });
 
 // 13. Admin & Public System Settings
@@ -1651,11 +1703,15 @@ app.get('/api/admin/users', async (req, res) => {
           isBanned: Boolean(dbU.is_banned),
         };
         dbMap.set(mappedUser.id, mappedUser);
+        mockUsers.set(mappedUser.id, mappedUser);
+        if (mappedUser.email) mockUsers.set(mappedUser.email.toLowerCase(), mappedUser);
       });
 
-      // Merge memory users with DB users
+      // Merge memory users with DB users ONLY if not already in DB (DB is source of truth!)
       mockUsers.forEach(mU => {
-        dbMap.set(mU.id, mU);
+        if (!dbMap.has(mU.id)) {
+          dbMap.set(mU.id, mU);
+        }
       });
 
       allUsersList = Array.from(dbMap.values());
