@@ -395,7 +395,7 @@ async function saveUserToSupabase(user: User): Promise<void> {
       check_in_streak: user.checkInStreak || 0,
       avatar: user.avatar || null,
       is_banned: Boolean(user.isBanned),
-    });
+    }, { onConflict: 'email' });
     if (error) {
       console.error('Supabase user upsert error:', error.message, error.details);
     }
@@ -516,7 +516,7 @@ app.post('/api/auth/register', async (req, res) => {
       const { data: dbUser } = await supabase
         .from('users')
         .select('*')
-        .eq('email', cleanEmail)
+        .ilike('email', cleanEmail)
         .maybeSingle();
 
       if (dbUser) {
@@ -550,7 +550,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   if (existingUser) {
-    return res.status(400).json({ error: 'User with this Gmail already exists. Please log in.' });
+    return res.status(400).json({ error: 'এই জিমেইল (Gmail) দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে! নতুন করে রেজিস্টার না করে অনুগ্রহ করে লগইন করুন।' });
   }
 
   // 1 Account Per Device Restriction Rule
@@ -639,12 +639,9 @@ app.post('/api/auth/register', async (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
-  mockUsers.set(userId, newUser);
-  mockUsers.set(cleanEmail, newUser);
-
-  // Persist user in Supabase
+  // Persist user in Supabase FIRST before adding to memory
   try {
-    await supabase.from('users').upsert({
+    const { error } = await supabase.from('users').upsert({
       id: newUser.id,
       name: newUser.name,
       email: newUser.email,
@@ -665,10 +662,29 @@ app.post('/api/auth/register', async (req, res) => {
       device_name: newUser.deviceName,
       last_active: newUser.lastActive,
       created_at: newUser.createdAt,
-    });
-  } catch (err) {
+    }, { onConflict: 'email' });
+
+    if (error) {
+      console.error('Supabase register error:', error.message, error.details);
+      if (error.message?.includes('duplicate key') || error.message?.includes('users_email_key') || error.message?.includes('email')) {
+        return res.status(400).json({
+          error: 'এই জিমেইল (Gmail) দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে! নতুন করে রেজিস্টার না করে অনুগ্রহ করে লগইন করুন।'
+        });
+      }
+      return res.status(500).json({
+        error: `ডাটাবেসে অ্যাকাউন্ট সংরক্ষণ করতে সমস্যা হয়েছে: ${error.message}`
+      });
+    }
+  } catch (err: any) {
     console.error('Supabase save user error:', err);
+    return res.status(500).json({
+      error: `সার্ভার এরর: ডাটাবেসে সংযোগ করা সম্ভব হয়নি।`
+    });
   }
+
+  // Now that database write succeeded without error, add to memory cache!
+  mockUsers.set(userId, newUser);
+  mockUsers.set(cleanEmail, newUser);
 
   // If referred, create Referral Record & evaluate verification rules
   if (referredByUserId) {
