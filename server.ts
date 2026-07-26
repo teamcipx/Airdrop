@@ -9,6 +9,17 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Prevent browser and CDN caching of API responses (fixes 304 Not Modified issues)
+app.set('etag', false);
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.json({ limit: '15mb' }));
 
 // Initialize Supabase client
@@ -272,6 +283,7 @@ const failedImgbbKeys = new Set<string>();
 
 // ImgBB Upload Proxy with Multi-Key Failover & Automatic Rotation
 async function uploadToImgBB(base64Image: string): Promise<string> {
+  await loadSystemSettingsFromSupabase();
   const rawKeys = `${systemSettings.imgbbApiKey || ''},${process.env.IMGBB_API_KEY || ''}`;
   const allKeys = rawKeys
     .split(/[\s,]+/)
@@ -371,7 +383,7 @@ async function getUserById(userIdOrEmail: string): Promise<User | null> {
 async function saveUserToSupabase(user: User): Promise<void> {
   if (!user || !user.id) return;
   try {
-    const { error } = await supabase.from('users').upsert({
+    const fullPayload: any = {
       id: user.id,
       name: user.name,
       email: user.email,
@@ -395,12 +407,167 @@ async function saveUserToSupabase(user: User): Promise<void> {
       check_in_streak: user.checkInStreak || 0,
       avatar: user.avatar || null,
       is_banned: Boolean(user.isBanned),
-    }, { onConflict: 'email' });
+    };
+    let { error } = await supabase.from('users').upsert(fullPayload, { onConflict: 'email' });
     if (error) {
-      console.error('Supabase user upsert error:', error.message, error.details);
+      console.warn('Supabase user full upsert failed, trying minimal fallback columns:', error.message);
+      // Fallback: minimal columns if optional columns like avatar or taka_balance do not exist yet
+      const minPayload: any = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        balance: user.balance,
+        energy: user.energy,
+        max_energy: user.maxEnergy,
+        energy_level: user.energyLevel,
+        hit_level: user.hitLevel,
+        hit_damage: user.hitDamage,
+        subject_level: user.subjectLevel,
+        subject_hp: user.subjectHp,
+        subject_max_hp: user.subjectMaxHp,
+        referral_code: user.referralCode,
+        referred_by: user.referredBy || null,
+        device_id: user.deviceId,
+        device_name: user.deviceName,
+        last_active: user.lastActive,
+      };
+      if (user.avatar) minPayload.avatar = user.avatar;
+      if (user.takaBalance !== undefined) minPayload.taka_balance = user.takaBalance;
+      await supabase.from('users').upsert(minPayload, { onConflict: 'email' });
     }
   } catch (err) {
     console.error('Supabase saveUserToSupabase error:', err);
+  }
+}
+
+// Helper: Load system settings from Supabase
+async function loadSystemSettingsFromSupabase(): Promise<void> {
+  try {
+    const { data } = await supabase.from('system_settings').select('*').eq('id', 1).maybeSingle();
+    if (data) {
+      if (data.imgbb_api_key !== undefined) systemSettings.imgbbApiKey = data.imgbb_api_key || '';
+      if (data.brevo_api_key !== undefined) systemSettings.brevoApiKey = data.brevo_api_key || '';
+      if (data.brevo_daily_limit !== undefined) systemSettings.brevoDailyLimit = Number(data.brevo_daily_limit) || 290;
+      if (data.brevo_used_today !== undefined) systemSettings.brevoUsedToday = Number(data.brevo_used_today) || 0;
+      if (data.resend_api_key !== undefined) systemSettings.resendApiKey = data.resend_api_key || '';
+      if (data.resend_daily_limit !== undefined) systemSettings.resendDailyLimit = Number(data.resend_daily_limit) || 98;
+      if (data.resend_used_today !== undefined) systemSettings.resendUsedToday = Number(data.resend_used_today) || 0;
+      if (data.recharge_interval_hours !== undefined) systemSettings.rechargeIntervalHours = Number(data.recharge_interval_hours) || 6;
+      if (data.default_hit_damage !== undefined) systemSettings.defaultHitDamage = Number(data.default_hit_damage) || 0.5;
+      if (data.tutorial_fb_video_url !== undefined && data.tutorial_fb_video_url) systemSettings.tutorialFbVideoUrl = data.tutorial_fb_video_url;
+      if (data.support_telegram_url !== undefined && data.support_telegram_url) systemSettings.supportTelegramUrl = data.support_telegram_url;
+      if (data.channel_telegram_url !== undefined && data.channel_telegram_url) systemSettings.channelTelegramUrl = data.channel_telegram_url;
+      if (data.popup_welcome_text !== undefined && data.popup_welcome_text) systemSettings.popupWelcomeText = data.popup_welcome_text;
+      if (systemSettings.imgbbApiKey) {
+        failedImgbbKeys.clear();
+      }
+    }
+  } catch (err) {
+    console.error('Supabase load system settings error:', err);
+  }
+}
+
+// Helper: Save system settings to Supabase
+async function saveSystemSettingsToSupabase(): Promise<void> {
+  try {
+    const fullPayload: any = {
+      id: 1,
+      imgbb_api_key: systemSettings.imgbbApiKey || '',
+      brevo_api_key: systemSettings.brevoApiKey || '',
+      brevo_daily_limit: systemSettings.brevoDailyLimit || 290,
+      brevo_used_today: systemSettings.brevoUsedToday || 0,
+      resend_api_key: systemSettings.resendApiKey || '',
+      resend_daily_limit: systemSettings.resendDailyLimit || 98,
+      resend_used_today: systemSettings.resendUsedToday || 0,
+      recharge_interval_hours: systemSettings.rechargeIntervalHours || 6,
+      default_hit_damage: systemSettings.defaultHitDamage || 0.5,
+      tutorial_fb_video_url: systemSettings.tutorialFbVideoUrl || '',
+      support_telegram_url: systemSettings.supportTelegramUrl || '',
+      channel_telegram_url: systemSettings.channelTelegramUrl || '',
+      popup_welcome_text: systemSettings.popupWelcomeText || '',
+    };
+    let { error } = await supabase.from('system_settings').upsert(fullPayload);
+    if (error) {
+      console.warn('Supabase system_settings full upsert failed, trying minimal fallback columns:', error.message);
+      const minPayload: any = {
+        id: 1,
+        imgbb_api_key: systemSettings.imgbbApiKey || '',
+        brevo_api_key: systemSettings.brevoApiKey || '',
+        brevo_daily_limit: systemSettings.brevoDailyLimit || 290,
+        brevo_used_today: systemSettings.brevoUsedToday || 0,
+        resend_api_key: systemSettings.resendApiKey || '',
+        resend_daily_limit: systemSettings.resendDailyLimit || 98,
+        resend_used_today: systemSettings.resendUsedToday || 0,
+        recharge_interval_hours: systemSettings.rechargeIntervalHours || 6,
+        default_hit_damage: systemSettings.defaultHitDamage || 0.5,
+      };
+      await supabase.from('system_settings').upsert(minPayload);
+    }
+  } catch (err) {
+    console.error('Supabase save system settings error:', err);
+  }
+}
+
+// Helper: Save Task to Supabase
+async function saveTaskToSupabase(task: Task): Promise<void> {
+  if (!task || !task.id) return;
+  try {
+    const { error } = await supabase.from('tasks').upsert({
+      id: task.id,
+      title: task.title,
+      description: task.description || '',
+      reward: Number(task.reward) || 0,
+      type: task.type || 'one_time',
+      category: task.category || 'social',
+      action_url: task.actionUrl || '',
+      requires_proof: Boolean(task.requiresProof),
+      created_at: task.createdAt || new Date().toISOString(),
+    });
+    if (error) console.error('Supabase task upsert error:', error.message);
+  } catch (err) {
+    console.error('Supabase saveTaskToSupabase error:', err);
+  }
+}
+
+// Helper: Save Task Submission to Supabase
+async function saveSubmissionToSupabase(sub: TaskSubmission): Promise<void> {
+  if (!sub || !sub.id) return;
+  try {
+    // Try full schema variation first (compatible with schema.sql)
+    const fullPayload: any = {
+      id: sub.id,
+      task_id: sub.taskId,
+      user_id: sub.userId,
+      user_name: sub.userName || '',
+      user_email: sub.userEmail || '',
+      proof_image_url: sub.proofImageUrl || '',
+      proof_image: sub.proofImageUrl || '',
+      status: sub.status || 'pending',
+      rejection_reason: sub.rejectionReason || null,
+      admin_comment: sub.rejectionReason || null,
+      submitted_at: sub.submittedAt || new Date().toISOString(),
+      reviewed_at: sub.reviewedAt || null,
+    };
+    let { error } = await supabase.from('task_submissions').upsert(fullPayload);
+    if (error) {
+      console.warn('Supabase task_submissions full upsert failed, trying minimal columns:', error.message);
+      // Fallback minimal variation (compatible with supabase_schema.sql)
+      const minPayload: any = {
+        id: sub.id,
+        user_id: sub.userId,
+        task_id: sub.taskId,
+        proof_image: sub.proofImageUrl || '',
+        status: sub.status || 'pending',
+        admin_comment: sub.rejectionReason || null,
+        submitted_at: sub.submittedAt || new Date().toISOString(),
+      };
+      if (sub.proofImageUrl) minPayload.proof_image_url = sub.proofImageUrl;
+      if (sub.rejectionReason) minPayload.rejection_reason = sub.rejectionReason;
+      await supabase.from('task_submissions').upsert(minPayload);
+    }
+  } catch (err) {
+    console.error('Supabase saveSubmissionToSupabase error:', err);
   }
 }
 
@@ -1073,8 +1240,38 @@ app.post('/api/game/upgrade', async (req, res) => {
 });
 
 // 8. Tasks: Get all tasks
-app.get('/api/tasks', (req, res) => {
-  res.json({ success: true, tasks: mockTasks });
+app.get('/api/tasks', async (req, res) => {
+  let tasksList = [...mockTasks];
+  try {
+    const { data: dbTasks } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+    if (dbTasks && dbTasks.length > 0) {
+      tasksList = dbTasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        description: t.description || '',
+        reward: Number(t.reward) || 0,
+        type: t.type || 'one_time',
+        category: t.category || 'social',
+        actionUrl: t.action_url || '',
+        requiresProof: Boolean(t.requires_proof),
+        createdAt: t.created_at || new Date().toISOString(),
+      }));
+      // Sync memory
+      tasksList.forEach(t => {
+        const idx = mockTasks.findIndex(mt => mt.id === t.id);
+        if (idx !== -1) mockTasks[idx] = t;
+        else mockTasks.push(t);
+      });
+    } else {
+      // Seed default tasks to DB
+      for (const t of mockTasks) {
+        await saveTaskToSupabase(t);
+      }
+    }
+  } catch (err) {
+    console.error('Supabase fetch tasks error:', err);
+  }
+  res.json({ success: true, tasks: tasksList });
 });
 
 // 9. Tasks: Submit proof
@@ -1109,6 +1306,7 @@ app.post('/api/tasks/submit', async (req, res) => {
   }
 
   mockSubmissions.push(submission);
+  await saveSubmissionToSupabase(submission);
   await saveUserToSupabase(user);
 
   res.json({
@@ -1122,9 +1320,41 @@ app.post('/api/tasks/submit', async (req, res) => {
 });
 
 // 10. Tasks: User Submissions
-app.get('/api/tasks/my-submissions/:userId', (req, res) => {
+app.get('/api/tasks/my-submissions/:userId', async (req, res) => {
   const { userId } = req.params;
-  const userSubmissions = mockSubmissions.filter(s => s.userId === userId);
+  let userSubmissions = mockSubmissions.filter(s => s.userId === userId);
+
+  try {
+    const { data: dbSubs } = await supabase
+      .from('task_submissions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('submitted_at', { ascending: false });
+
+    if (dbSubs && dbSubs.length > 0) {
+      userSubmissions = dbSubs.map(s => ({
+        id: s.id,
+        taskId: s.task_id,
+        userId: s.user_id,
+        userName: s.user_name || '',
+        userEmail: s.user_email || '',
+        proofImageUrl: s.proof_image_url || s.proof_image || '',
+        status: s.status || 'pending',
+        rejectionReason: s.rejection_reason || s.admin_comment || undefined,
+        submittedAt: s.submitted_at || new Date().toISOString(),
+        reviewedAt: s.reviewed_at || undefined,
+      }));
+      // Sync memory
+      userSubmissions.forEach(sub => {
+        if (!mockSubmissions.some(ms => ms.id === sub.id)) {
+          mockSubmissions.push(sub);
+        }
+      });
+    }
+  } catch (err) {
+    console.error('Supabase fetch my submissions error:', err);
+  }
+
   res.json({ success: true, submissions: userSubmissions });
 });
 
@@ -1248,7 +1478,8 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 
 // 13. Admin & Public System Settings
-app.get('/api/settings/public', (req, res) => {
+app.get('/api/settings/public', async (req, res) => {
+  await loadSystemSettingsFromSupabase();
   res.json({
     success: true,
     settings: {
@@ -1260,7 +1491,8 @@ app.get('/api/settings/public', (req, res) => {
   });
 });
 
-app.get('/api/admin/settings', (req, res) => {
+app.get('/api/admin/settings', async (req, res) => {
+  await loadSystemSettingsFromSupabase();
   res.json({ success: true, settings: systemSettings });
 });
 
@@ -1291,7 +1523,7 @@ app.get('/api/admin/otp-stats', (req, res) => {
   });
 });
 
-app.post('/api/admin/settings', (req, res) => {
+app.post('/api/admin/settings', async (req, res) => {
   const {
     imgbbApiKey, brevoApiKey, resendApiKey, brevoDailyLimit, resendDailyLimit,
     tutorialFbVideoUrl, supportTelegramUrl, channelTelegramUrl, popupWelcomeText
@@ -1309,12 +1541,45 @@ app.post('/api/admin/settings', (req, res) => {
   if (channelTelegramUrl !== undefined) systemSettings.channelTelegramUrl = channelTelegramUrl;
   if (popupWelcomeText !== undefined) systemSettings.popupWelcomeText = popupWelcomeText;
 
+  await saveSystemSettingsToSupabase();
+
   res.json({ success: true, settings: systemSettings, message: 'Settings updated successfully!' });
 });
 
 // 14. Admin: Submissions review
-app.get('/api/admin/submissions', (req, res) => {
-  res.json({ success: true, submissions: mockSubmissions });
+app.get('/api/admin/submissions', async (req, res) => {
+  let allSubmissions = [...mockSubmissions];
+  try {
+    const { data: dbSubs } = await supabase
+      .from('task_submissions')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+
+    if (dbSubs && dbSubs.length > 0) {
+      allSubmissions = dbSubs.map(s => ({
+        id: s.id,
+        taskId: s.task_id,
+        userId: s.user_id,
+        userName: s.user_name || '',
+        userEmail: s.user_email || '',
+        proofImageUrl: s.proof_image_url || s.proof_image || '',
+        status: s.status || 'pending',
+        rejectionReason: s.rejection_reason || s.admin_comment || undefined,
+        submittedAt: s.submitted_at || new Date().toISOString(),
+        reviewedAt: s.reviewed_at || undefined,
+      }));
+      // Sync memory
+      allSubmissions.forEach(sub => {
+        if (!mockSubmissions.some(ms => ms.id === sub.id)) {
+          mockSubmissions.push(sub);
+        }
+      });
+    }
+  } catch (err) {
+    console.error('Supabase fetch admin submissions error:', err);
+  }
+
+  res.json({ success: true, submissions: allSubmissions });
 });
 
 app.post('/api/admin/submissions/review', async (req, res) => {
@@ -1338,11 +1603,13 @@ app.post('/api/admin/submissions/review', async (req, res) => {
     }
   }
 
+  await saveSubmissionToSupabase(sub);
+
   res.json({ success: true, submission: sub });
 });
 
 // 15. Admin: Create Task
-app.post('/api/admin/tasks', (req, res) => {
+app.post('/api/admin/tasks', async (req, res) => {
   const { title, description, reward, type, category, actionUrl, requiresProof } = req.body;
 
   const newTask: Task = {
@@ -1358,11 +1625,12 @@ app.post('/api/admin/tasks', (req, res) => {
   };
 
   mockTasks.push(newTask);
+  await saveTaskToSupabase(newTask);
   res.json({ success: true, task: newTask });
 });
 
 // 15b. Admin: Update Task
-app.put('/api/admin/tasks/:id', (req, res) => {
+app.put('/api/admin/tasks/:id', async (req, res) => {
   const { id } = req.params;
   const { title, description, reward, type, category, actionUrl, requiresProof } = req.body;
 
@@ -1382,11 +1650,13 @@ app.put('/api/admin/tasks/:id', (req, res) => {
     requiresProof: requiresProof !== undefined ? Boolean(requiresProof) : mockTasks[index].requiresProof,
   };
 
+  await saveTaskToSupabase(mockTasks[index]);
+
   res.json({ success: true, task: mockTasks[index] });
 });
 
 // 15c. Admin: Delete Task
-app.delete('/api/admin/tasks/:id', (req, res) => {
+app.delete('/api/admin/tasks/:id', async (req, res) => {
   const { id } = req.params;
   const index = mockTasks.findIndex(t => t.id === id);
   if (index === -1) {
@@ -1395,6 +1665,11 @@ app.delete('/api/admin/tasks/:id', (req, res) => {
 
   const deletedTask = mockTasks[index];
   mockTasks.splice(index, 1);
+  try {
+    await supabase.from('tasks').delete().eq('id', id);
+  } catch (err) {
+    console.error('Supabase delete task error:', err);
+  }
   res.json({ success: true, deletedTaskId: id, task: deletedTask });
 });
 
@@ -1855,6 +2130,7 @@ app.delete('/api/admin/users/:userId', async (req, res) => {
 
 // Serve Vite frontend
 async function startServer() {
+  await loadSystemSettingsFromSupabase();
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
