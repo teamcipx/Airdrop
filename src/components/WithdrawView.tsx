@@ -250,16 +250,21 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({ user, onUpdateUser, 
           <span className="font-black text-emerald-400 font-mono text-sm">১k Coin = ২ টাকা</span>
         </div>
 
-        <div className="bg-[#170a06] p-3.5 rounded-2xl border border-[#482b1d] shadow-inner flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <Gift className="w-4 h-4 text-orange-400" />
-            <span className="font-bold text-amber-200">সর্বনিম্ন রেফার শর্ত:</span>
+        <div className="bg-[#170a06] p-3.5 rounded-2xl border border-[#482b1d] shadow-inner flex flex-col gap-1 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-orange-400" />
+              <span className="font-bold text-amber-200">রেফার শর্ত (আজীবন আনলিমিটেড):</span>
+            </div>
+            <span className={`font-black font-mono text-xs px-3 py-1 rounded-xl shadow-sm ${
+              referralsCount >= 4 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+            }`}>
+              {referralsCount} / 4 রেফার সম্পন্ন
+            </span>
           </div>
-          <span className={`font-black font-mono text-xs px-3 py-1 rounded-xl shadow-sm ${
-            referralsCount >= 4 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-          }`}>
-            {referralsCount} / 4 রেফার সম্পন্ন
-          </span>
+          <p className="text-[10px] text-emerald-400/80 font-mono mt-0.5">
+            * একবার ৪টি রেফার সম্পন্ন হলে আজীবন যতবার খুশি আনলিমিটেড উইথড্র করতে পারবেন!
+          </p>
         </div>
       </div>
 
@@ -392,7 +397,7 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({ user, onUpdateUser, 
               className="w-full bg-[#140b08] border border-emerald-500/30 rounded-2xl px-3.5 py-3 text-emerald-300 font-mono focus:outline-none focus:border-emerald-500 text-base font-bold"
             />
             <p className="text-[10px] text-emerald-400/70 mt-1 font-mono">
-              * সর্বনিম্ন ৳৩০০ টাকা এবং ৪ টি রেফার থাকতে হবে।
+              * সর্বনিম্ন ৳৩০০ টাকা এবং ৪টি রেফার থাকলে আজীবন আনলিমিটেড উইথড্র করতে পারবেন।
             </p>
           </div>
         )}

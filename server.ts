@@ -51,41 +51,7 @@ const mockUsers: Map<string, User> = new Map();
 const mockOtps: Map<string, { code: string; expiresAt: number }> = new Map();
 const mockDailyOtpStats: Map<string, number> = new Map(); // YYYY-MM-DD -> count
 const mockOtpRequestTracker: Map<string, { count: number; lastReset: number }> = new Map(); // email or sessionKey -> tracker
-const mockTasks: Task[] = [
-  {
-    id: 'task_1',
-    title: 'Join HedHog Official Telegram',
-    description: 'Subscribe to our official Telegram channel for $NXB announcements and drops.',
-    reward: 10,
-    type: 'one_time',
-    category: 'telegram',
-    actionUrl: 'https://t.me',
-    requiresProof: true,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'task_2',
-    title: 'Subscribe to YouTube Channel',
-    description: 'Watch our latest $NXB gameplay video and subscribe.',
-    reward: 15,
-    type: 'one_time',
-    category: 'youtube',
-    actionUrl: 'https://youtube.com',
-    requiresProof: true,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'task_3',
-    title: 'Daily Check-in & Share',
-    description: 'Log into $NXB Airdrop today and share your status with friends.',
-    reward: 5,
-    type: 'daily',
-    category: 'social',
-    actionUrl: 'https://x.com',
-    requiresProof: false,
-    createdAt: new Date().toISOString(),
-  }
-];
+const mockTasks: Task[] = [];
 const mockSubmissions: TaskSubmission[] = [];
 const mockReferrals: ReferralRecord[] = [];
 const mockWithdrawals: WithdrawalRecord[] = [];
@@ -1422,10 +1388,10 @@ app.post('/api/game/upgrade', async (req, res) => {
 
 // 8. Tasks: Get all tasks
 app.get('/api/tasks', async (req, res) => {
-  let tasksList = [...mockTasks];
+  let tasksList: Task[] = [...mockTasks];
   try {
     const { data: dbTasks } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
-    if (dbTasks && dbTasks.length > 0) {
+    if (dbTasks) {
       tasksList = dbTasks.map(t => ({
         id: t.id,
         title: t.title,
@@ -1438,16 +1404,8 @@ app.get('/api/tasks', async (req, res) => {
         createdAt: t.created_at || new Date().toISOString(),
       }));
       // Sync memory
-      tasksList.forEach(t => {
-        const idx = mockTasks.findIndex(mt => mt.id === t.id);
-        if (idx !== -1) mockTasks[idx] = t;
-        else mockTasks.push(t);
-      });
-    } else {
-      // Seed default tasks to DB
-      for (const t of mockTasks) {
-        await saveTaskToSupabase(t);
-      }
+      mockTasks.length = 0;
+      mockTasks.push(...tasksList);
     }
   } catch (err) {
     console.error('Supabase fetch tasks error:', err);
@@ -1559,7 +1517,6 @@ app.post('/api/tasks/submit', async (req, res) => {
 // 10. Tasks: User Submissions
 app.get('/api/tasks/my-submissions/:userId', async (req, res) => {
   const { userId } = req.params;
-  let userSubmissions = mockSubmissions.filter(s => s.userId === userId);
 
   try {
     const { data: dbSubs } = await supabase
@@ -1569,7 +1526,7 @@ app.get('/api/tasks/my-submissions/:userId', async (req, res) => {
       .order('submitted_at', { ascending: false });
 
     if (dbSubs && dbSubs.length > 0) {
-      userSubmissions = dbSubs.map(s => ({
+      const mapped = dbSubs.map(s => ({
         id: s.id,
         taskId: s.task_id,
         userId: s.user_id,
@@ -1581,16 +1538,20 @@ app.get('/api/tasks/my-submissions/:userId', async (req, res) => {
         submittedAt: s.submitted_at || new Date().toISOString(),
         reviewedAt: s.reviewed_at || undefined,
       }));
-      // Sync memory
-      userSubmissions.forEach(sub => {
-        if (!mockSubmissions.some(ms => ms.id === sub.id)) {
-          mockSubmissions.push(sub);
-        }
+      // Merge into memory
+      mapped.forEach(sub => {
+        const idx = mockSubmissions.findIndex(ms => ms.id === sub.id);
+        if (idx !== -1) mockSubmissions[idx] = { ...mockSubmissions[idx], ...sub };
+        else mockSubmissions.push(sub);
       });
     }
   } catch (err) {
     console.error('Supabase fetch my submissions error:', err);
   }
+
+  const userSubmissions = mockSubmissions
+    .filter(s => s.userId === userId)
+    .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
 
   res.json({ success: true, submissions: userSubmissions });
 });
@@ -1789,7 +1750,6 @@ app.post('/api/admin/settings', async (req, res) => {
 
 // 14. Admin: Submissions review
 app.get('/api/admin/submissions', async (req, res) => {
-  let allSubmissions = [...mockSubmissions];
   try {
     const { data: dbSubs } = await supabase
       .from('task_submissions')
@@ -1797,7 +1757,7 @@ app.get('/api/admin/submissions', async (req, res) => {
       .order('submitted_at', { ascending: false });
 
     if (dbSubs && dbSubs.length > 0) {
-      allSubmissions = dbSubs.map(s => ({
+      const mapped = dbSubs.map(s => ({
         id: s.id,
         taskId: s.task_id,
         userId: s.user_id,
@@ -1809,16 +1769,17 @@ app.get('/api/admin/submissions', async (req, res) => {
         submittedAt: s.submitted_at || new Date().toISOString(),
         reviewedAt: s.reviewed_at || undefined,
       }));
-      // Sync memory
-      allSubmissions.forEach(sub => {
-        if (!mockSubmissions.some(ms => ms.id === sub.id)) {
-          mockSubmissions.push(sub);
-        }
+      mapped.forEach(sub => {
+        const idx = mockSubmissions.findIndex(ms => ms.id === sub.id);
+        if (idx !== -1) mockSubmissions[idx] = { ...mockSubmissions[idx], ...sub };
+        else mockSubmissions.push(sub);
       });
     }
   } catch (err) {
     console.error('Supabase fetch admin submissions error:', err);
   }
+
+  const allSubmissions = [...mockSubmissions].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
 
   res.json({ success: true, submissions: allSubmissions });
 });
@@ -1969,16 +1930,20 @@ app.put('/api/admin/tasks/:id', async (req, res) => {
 app.delete('/api/admin/tasks/:id', async (req, res) => {
   const { id } = req.params;
   const index = mockTasks.findIndex(t => t.id === id);
-  if (index === -1) {
-    return res.status(404).json({ success: false, error: 'Task not found' });
+  const deletedTask = index !== -1 ? mockTasks[index] : { id };
+  if (index !== -1) {
+    mockTasks.splice(index, 1);
   }
-
-  const deletedTask = mockTasks[index];
-  mockTasks.splice(index, 1);
   try {
-    await supabase.from('tasks').delete().eq('id', id);
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error && index === -1) {
+      return res.status(404).json({ success: false, error: 'Task not found' });
+    }
   } catch (err) {
     console.error('Supabase delete task error:', err);
+    if (index === -1) {
+      return res.status(404).json({ success: false, error: 'Task not found' });
+    }
   }
   res.json({ success: true, deletedTaskId: id, task: deletedTask });
 });
@@ -2085,51 +2050,16 @@ app.post('/api/withdraw/request', async (req, res) => {
 
 app.get('/api/withdraw/my/:userId', async (req, res) => {
   const { userId } = req.params;
-  let list = mockWithdrawals.filter(w => w.userId === userId);
-
-  if (list.length === 0) {
-    try {
-      const { data: dbWths } = await supabase
-        .from('withdrawals')
-        .select('*')
-        .eq('user_id', userId)
-        .order('requested_at', { ascending: false });
-
-      if (dbWths) {
-        list = dbWths.map(w => ({
-          id: w.id,
-          userId: w.user_id,
-          userName: w.user_name,
-          userEmail: w.user_email,
-          paymentMethod: w.payment_method,
-          accountNumber: w.account_number,
-          coinsAmount: Number(w.coins_amount) || 0,
-          takaAmount: Number(w.taka_amount) || 0,
-          status: w.status,
-          rejectionReason: w.rejection_reason,
-          requestedAt: w.requested_at,
-          processedAt: w.processed_at,
-        }));
-      }
-    } catch (err) {
-      console.error('Supabase fetch my withdrawals error:', err);
-    }
-  }
-
-  res.json({ success: true, withdrawals: list });
-});
-
-app.get('/api/admin/withdrawals', async (req, res) => {
-  let list = [...mockWithdrawals];
 
   try {
     const { data: dbWths } = await supabase
       .from('withdrawals')
       .select('*')
+      .eq('user_id', userId)
       .order('requested_at', { ascending: false });
 
-    if (dbWths && dbWths.length > 0) {
-      list = dbWths.map(w => ({
+    if (dbWths) {
+      const dbList = dbWths.map(w => ({
         id: w.id,
         userId: w.user_id,
         userName: w.user_name,
@@ -2143,10 +2073,56 @@ app.get('/api/admin/withdrawals', async (req, res) => {
         requestedAt: w.requested_at,
         processedAt: w.processed_at,
       }));
+      dbList.forEach(item => {
+        const idx = mockWithdrawals.findIndex(m => m.id === item.id);
+        if (idx !== -1) mockWithdrawals[idx] = { ...mockWithdrawals[idx], ...item };
+        else mockWithdrawals.push(item);
+      });
+    }
+  } catch (err) {
+    console.error('Supabase fetch my withdrawals error:', err);
+  }
+
+  const list = mockWithdrawals
+    .filter(w => w.userId === userId)
+    .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+
+  res.json({ success: true, withdrawals: list });
+});
+
+app.get('/api/admin/withdrawals', async (req, res) => {
+  try {
+    const { data: dbWths } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .order('requested_at', { ascending: false });
+
+    if (dbWths && dbWths.length > 0) {
+      const dbList = dbWths.map(w => ({
+        id: w.id,
+        userId: w.user_id,
+        userName: w.user_name,
+        userEmail: w.user_email,
+        paymentMethod: w.payment_method,
+        accountNumber: w.account_number,
+        coinsAmount: Number(w.coins_amount) || 0,
+        takaAmount: Number(w.taka_amount) || 0,
+        status: w.status,
+        rejectionReason: w.rejection_reason,
+        requestedAt: w.requested_at,
+        processedAt: w.processed_at,
+      }));
+      dbList.forEach(item => {
+        const idx = mockWithdrawals.findIndex(m => m.id === item.id);
+        if (idx !== -1) mockWithdrawals[idx] = { ...mockWithdrawals[idx], ...item };
+        else mockWithdrawals.push(item);
+      });
     }
   } catch (err) {
     console.error('Supabase fetch admin withdrawals error:', err);
   }
+
+  const list = [...mockWithdrawals].sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
 
   res.json({ success: true, withdrawals: list });
 });

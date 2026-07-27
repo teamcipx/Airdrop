@@ -17,6 +17,7 @@ import { WelcomePopup } from './components/WelcomePopup';
 import { TutorialView } from './components/TutorialView';
 import { MenuView } from './components/MenuView';
 import { OnboardingModal } from './components/OnboardingModal';
+import { SupportWidget } from './components/SupportWidget';
 
 export default function App() {
   // ⚡ Instant Optimistic Load: Read user from localStorage/cookie cache on initial render
@@ -268,6 +269,12 @@ export default function App() {
             />
           )}
         </main>
+
+        {/* Floating Fixed Live Support Widget */}
+        <SupportWidget
+          supportUrl={publicSettings.supportTelegramUrl}
+          channelUrl={publicSettings.channelTelegramUrl}
+        />
 
         {/* Bottom Navigation Bar */}
         <Navbar

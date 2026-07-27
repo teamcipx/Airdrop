@@ -115,13 +115,6 @@ INSERT INTO public.users (
   'device_admin_pc', 'Admin Workstation', NOW(), NOW()
 ) ON CONFLICT (email) DO NOTHING;
 
--- Insert Default Tasks
-INSERT INTO public.tasks (id, title, description, reward, type, category, action_url, requires_proof) VALUES
-('task_1', 'Join Official Telegram Channel', 'Subscribe to our official Telegram channel for $NXB drops & updates.', 100.00, 'one_time', 'telegram', 'https://t.me', TRUE),
-('task_2', 'Subscribe YouTube Channel', 'Watch our latest $NXB gameplay video and subscribe.', 150.00, 'one_time', 'youtube', 'https://youtube.com', TRUE),
-('task_3', 'Daily Check-in & Share', 'Log into XN Reward today and share your referral link.', 50.00, 'daily', 'social', 'https://x.com', FALSE)
-ON CONFLICT (id) DO NOTHING;
-
 -- Insert System Settings Default Row
 INSERT INTO public.system_settings (id, admin_email) VALUES (1, 'admin@gmail.com')
 ON CONFLICT (id) DO NOTHING;
