@@ -207,10 +207,10 @@ function getOtpEmailHtml(otpCode: string, email: string): string {
 
 // SMTP Failover Handler (Brevo -> Resend -> Fallback)
 async function sendOtpEmail(email: string, otpCode: string): Promise<{ success: boolean; providerUsed: string; message: string }> {
-  const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || 'noreply@nxpost.online';
+  const brevoSenderEmail = (process.env.BREVO_SENDER_EMAIL || 'noreply@nxpost.online').trim().replace(/^["']|["']$/g, '');
   const emailHtmlContent = getOtpEmailHtml(otpCode, email);
-  const activeBrevoKey = systemSettings.brevoApiKey || process.env.BREVO_API_KEY || '';
-  const activeResendKey = systemSettings.resendApiKey || process.env.RESEND_API_KEY || '';
+  const activeBrevoKey = (process.env.BREVO_API_KEY || systemSettings.brevoApiKey || '').trim().replace(/^["']|["']$/g, '');
+  const activeResendKey = (process.env.RESEND_API_KEY || systemSettings.resendApiKey || '').trim().replace(/^["']|["']$/g, '');
 
   // Check Brevo first
   if (activeBrevoKey && systemSettings.brevoUsedToday < systemSettings.brevoDailyLimit) {
@@ -284,7 +284,7 @@ const failedImgbbKeys = new Set<string>();
 // ImgBB Upload Proxy with Multi-Key Failover & Automatic Rotation
 async function uploadToImgBB(base64Image: string): Promise<string> {
   await loadSystemSettingsFromSupabase();
-  const rawKeys = `${systemSettings.imgbbApiKey || ''},${process.env.IMGBB_API_KEY || ''}`;
+  const rawKeys = `${process.env.IMGBB_API_KEY || ''},${systemSettings.imgbbApiKey || ''}`;
   const allKeys = rawKeys
     .split(/[\s,]+/)
     .map(k => k.trim())
@@ -455,11 +455,11 @@ async function loadSystemSettingsFromSupabase(): Promise<void> {
   try {
     const { data } = await supabase.from('system_settings').select('*').eq('id', 1).maybeSingle();
     if (data) {
-      if (data.imgbb_api_key !== undefined) systemSettings.imgbbApiKey = data.imgbb_api_key || '';
-      if (data.brevo_api_key !== undefined) systemSettings.brevoApiKey = data.brevo_api_key || '';
+      if (data.imgbb_api_key) systemSettings.imgbbApiKey = data.imgbb_api_key;
+      if (data.brevo_api_key) systemSettings.brevoApiKey = data.brevo_api_key;
       if (data.brevo_daily_limit !== undefined) systemSettings.brevoDailyLimit = Number(data.brevo_daily_limit) || 290;
       if (data.brevo_used_today !== undefined) systemSettings.brevoUsedToday = Number(data.brevo_used_today) || 0;
-      if (data.resend_api_key !== undefined) systemSettings.resendApiKey = data.resend_api_key || '';
+      if (data.resend_api_key) systemSettings.resendApiKey = data.resend_api_key;
       if (data.resend_daily_limit !== undefined) systemSettings.resendDailyLimit = Number(data.resend_daily_limit) || 98;
       if (data.resend_used_today !== undefined) systemSettings.resendUsedToday = Number(data.resend_used_today) || 0;
       if (data.recharge_interval_hours !== undefined) systemSettings.rechargeIntervalHours = Number(data.recharge_interval_hours) || 6;
@@ -1628,11 +1628,11 @@ app.post('/api/admin/settings', async (req, res) => {
     tutorialFbVideoUrl, supportTelegramUrl, channelTelegramUrl, popupWelcomeText
   } = req.body;
   if (imgbbApiKey !== undefined) {
-    systemSettings.imgbbApiKey = imgbbApiKey;
+    systemSettings.imgbbApiKey = String(imgbbApiKey).trim().replace(/^["']|["']$/g, '');
     failedImgbbKeys.clear(); // Clear failed keys on admin update so corrected keys can be re-tested
   }
-  if (brevoApiKey !== undefined) systemSettings.brevoApiKey = brevoApiKey;
-  if (resendApiKey !== undefined) systemSettings.resendApiKey = resendApiKey;
+  if (brevoApiKey !== undefined) systemSettings.brevoApiKey = String(brevoApiKey).trim().replace(/^["']|["']$/g, '');
+  if (resendApiKey !== undefined) systemSettings.resendApiKey = String(resendApiKey).trim().replace(/^["']|["']$/g, '');
   if (brevoDailyLimit !== undefined) systemSettings.brevoDailyLimit = Number(brevoDailyLimit);
   if (resendDailyLimit !== undefined) systemSettings.resendDailyLimit = Number(resendDailyLimit);
   if (tutorialFbVideoUrl !== undefined) systemSettings.tutorialFbVideoUrl = tutorialFbVideoUrl;
