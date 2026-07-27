@@ -30,6 +30,7 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
   const [filterTab, setFilterTab] = useState<'all' | 'daily' | 'one_time'>('all');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [proofImageBase64, setProofImageBase64] = useState<string>('');
+  const [linkOpened, setLinkOpened] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -103,6 +104,7 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
       }
       setSelectedTask(null);
       setProofImageBase64('');
+      setLinkOpened(false);
       loadMySubmissions();
     } else {
       setMessage(res.error || 'Failed to submit proof');
@@ -239,9 +241,8 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
                         onOpenAuth();
                       } else {
                         setSelectedTask(task);
-                        if (task.actionUrl) {
-                          window.open(task.actionUrl, '_blank');
-                        }
+                        setLinkOpened(false);
+                        setProofImageBase64('');
                       }
                     }}
                     className="bg-gradient-to-r from-amber-500 to-orange-500 text-black font-extrabold text-xs px-3.5 py-1.5 rounded-xl hover:from-amber-400 hover:to-orange-400 transition-all shadow-md active:scale-95 cursor-pointer"
@@ -255,64 +256,148 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
         }))}
       </div>
 
-      {/* Task Proof Submission Modal */}
+      {/* 3-Step Task Execution & Proof Submission Page/Modal */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#241713] border border-[#4d352b] rounded-3xl p-5 w-full max-w-sm text-amber-50 flex flex-col gap-4 shadow-2xl relative">
-            <button
-              onClick={() => setSelectedTask(null)}
-              className="absolute top-4 right-4 text-amber-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-lg font-black text-amber-100 flex items-center gap-2">
-              <Upload className="w-5 h-5 text-amber-400" />
-              <span>Submit Task Screenshot Proof</span>
-            </h3>
-
-            <div className="bg-[#1c110d] p-3 rounded-2xl border border-[#3a271f] text-xs">
-              <p className="font-bold text-amber-200">{selectedTask.title}</p>
-              <p className="text-amber-300/70 mt-1">{selectedTask.description}</p>
-              <div className="mt-2 text-emerald-400 font-mono font-bold">Reward: ৳ {selectedTask.reward} Taka</div>
-            </div>
-
-            {selectedTask.requiresProof ? (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-amber-300">
-                  Upload Screenshot Proof (Hosted via ImgBB):
-                </label>
-                <div className="border-2 border-dashed border-[#543b30] hover:border-amber-500/60 rounded-2xl p-4 text-center cursor-pointer bg-[#1e130f] transition-all relative">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageFileChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
-                  {proofImageBase64 ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <img src={proofImageBase64} alt="Proof" className="w-32 h-32 object-cover rounded-xl border border-amber-500/40" />
-                      <span className="text-xs text-emerald-400 font-semibold">Screenshot Selected ✓</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-amber-300/70">
-                      <ImageIcon className="w-8 h-8 text-amber-400/80" />
-                      <span className="text-xs font-medium">Click to select screenshot image</span>
-                    </div>
-                  )}
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-gradient-to-b from-[#2a1a14] via-[#1f130e] to-[#150a07] border-2 border-amber-500/40 rounded-3xl p-4 sm:p-5 w-full max-w-md text-amber-50 flex flex-col gap-4 shadow-[0_0_50px_rgba(0,0,0,0.9)] relative max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#4d352b] sticky top-0 bg-[#2a1a14]/95 z-10 pt-1">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shadow-sm shrink-0">
+                  <Flag className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-amber-100 leading-tight">টাস্ক সম্পন্ন করুন (Complete Task)</h3>
+                  <p className="text-[11px] text-emerald-400 font-mono font-bold mt-0.5">রিওয়ার্ড: ৳ {selectedTask.reward} Taka BDT</p>
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-amber-300/80">This task does not require screenshot proof. Click submit to claim reward!</p>
-            )}
+              <button
+                onClick={() => {
+                  setSelectedTask(null);
+                  setLinkOpened(false);
+                  setProofImageBase64('');
+                }}
+                className="w-8 h-8 rounded-full bg-black/50 text-amber-400 hover:text-white hover:bg-black/80 flex items-center justify-center cursor-pointer transition-all border border-[#4d352b] shrink-0"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-            <button
-              onClick={handleSubmitProof}
-              disabled={submitting}
-              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-black font-extrabold py-3 rounded-2xl shadow-lg hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-50 cursor-pointer"
-            >
-              {submitting ? 'Uploading ImgBB & Submitting...' : 'Submit Proof Screenshot'}
-            </button>
+            {/* Step 1: Read Task */}
+            <div className="bg-[#1c110d] p-3.5 rounded-2xl border border-[#3a271f] space-y-2 relative overflow-hidden shadow-inner">
+              <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs pb-2 border-b border-[#3a271f]">
+                <span className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-[11px] font-mono font-black text-amber-300">১</span>
+                <span>ধাপ ১: টাস্ক বিবরণ পড়ুন (Read Instructions)</span>
+              </div>
+              <h4 className="text-sm font-black text-amber-100 pt-0.5">{selectedTask.title}</h4>
+              <p className="text-xs text-amber-200/80 leading-relaxed bg-black/30 p-3 rounded-xl border border-amber-500/10 font-medium whitespace-pre-line">{selectedTask.description}</p>
+              <div className="bg-emerald-950/60 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-mono font-bold text-emerald-300 flex items-center justify-between mt-1">
+                <span>কাজটি সঠিকভাবে করলে পাবেন:</span>
+                <span className="font-black text-emerald-400 text-sm">৳ {selectedTask.reward} টাকা</span>
+              </div>
+            </div>
+
+            {/* Step 2: Click Link */}
+            <div className={`p-3.5 rounded-2xl border transition-all space-y-2.5 shadow-inner ${
+              linkOpened ? 'bg-emerald-950/30 border-emerald-500/40' : 'bg-[#1c110d] border-[#3a271f]'
+            }`}>
+              <div className="flex items-center justify-between pb-2 border-b border-[#3a271f]/80">
+                <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-[11px] font-mono font-black text-amber-300">২</span>
+                  <span>ধাপ ২: লিংকে ক্লিক করুন (Open Link)</span>
+                </div>
+                {linkOpened && (
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 animate-pulse">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> লিংক ভিজিট হয়েছে
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-amber-200/70 leading-relaxed">
+                নিচের বাটনে ক্লিক করে নির্দিষ্ট লিংকে যান এবং নির্দেশিত কাজ (যেমন: জয়েন/সাবস্ক্রাইব/ভিজিট/লাইক) সম্পন্ন করুন।
+              </p>
+              {selectedTask.actionUrl ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(selectedTask.actionUrl, '_blank');
+                    setLinkOpened(true);
+                  }}
+                  className={`w-full py-3 px-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                    linkOpened
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/50 scale-101'
+                      : 'bg-gradient-to-r from-sky-500 via-blue-600 to-sky-600 hover:brightness-110 text-white border border-sky-400/40 animate-pulse'
+                  }`}
+                >
+                  <ExternalLink className="w-4 h-4 shrink-0" />
+                  <span>{linkOpened ? '🔗 আবার লিংকে যান (Visit Link Again)' : '🔗 টাস্ক লিংকে যান (Click Here to Complete Task)'}</span>
+                </button>
+              ) : (
+                <div className="bg-white/5 p-3 rounded-xl text-center text-xs text-amber-300/80 font-medium border border-amber-500/20">
+                  এই টাস্কে কোনো বাইরের লিংক নেই, সরাসরি ধাপ ৩ সম্পূর্ণ করুন।
+                </div>
+              )}
+            </div>
+
+            {/* Step 3: Upload Proof & Submit */}
+            <div className="bg-[#1c110d] p-3.5 rounded-2xl border border-[#3a271f] space-y-3 shadow-inner">
+              <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs pb-2 border-b border-[#3a271f]">
+                <span className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-[11px] font-mono font-black text-amber-300">৩</span>
+                <span>ধাপ ৩: প্রুফ জমা দিন (Upload Proof)</span>
+              </div>
+
+              {selectedTask.requiresProof ? (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-amber-200 block">
+                    কাজের স্ক্রিনশট আপলোড করুন (Upload Screenshot):
+                  </label>
+                  <div className="border-2 border-dashed border-[#543b30] hover:border-amber-500/80 rounded-2xl p-4 text-center cursor-pointer bg-[#1e130f] transition-all relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileChange}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    />
+                    {proofImageBase64 ? (
+                      <div className="flex flex-col items-center gap-2 py-1">
+                        <img src={proofImageBase64} alt="Proof" className="w-36 h-36 object-cover rounded-xl border-2 border-emerald-500/60 shadow-lg mx-auto" />
+                        <span className="text-xs text-emerald-400 font-bold bg-emerald-950/90 px-3 py-1 rounded-full border border-emerald-500/40 flex items-center justify-center gap-1 mx-auto w-fit">
+                          <CheckCircle className="w-3.5 h-3.5" /> স্ক্রিনশট সিলেক্ট হয়েছে (Change)
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-amber-300/70 py-3">
+                        <div className="w-11 h-11 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
+                          <ImageIcon className="w-6 h-6" />
+                        </div>
+                        <span className="text-xs font-bold text-amber-200">ক্লিক করে স্ক্রিনশট আপলোড করুন</span>
+                        <span className="text-[10px] text-amber-400/60 font-mono">(PNG, JPG, JPEG supported)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-300/80 bg-amber-500/10 p-3 rounded-xl border border-amber-500/30 text-center font-medium leading-relaxed">
+                  এই টাস্কে কোনো স্ক্রিনশট প্রুফ প্রয়োজন নেই। সরাসরি নিচের বাটনে ক্লিক করে রিওয়ার্ড সংগ্রহ করুন!
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleSubmitProof}
+                disabled={submitting || (selectedTask.requiresProof && !proofImageBase64)}
+                className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-black font-extrabold py-3.5 rounded-2xl shadow-[0_4px_20px_rgba(245,158,11,0.4)] hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-sm flex items-center justify-center gap-2 mt-2"
+              >
+                {submitting ? (
+                  <span>আপলোড হচ্ছে... (Submitting...)</span>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-black shrink-0" />
+                    <span>🚀 টাস্ক জমা দিন (Submit Task Proof)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
