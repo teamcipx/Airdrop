@@ -625,6 +625,87 @@ async function saveReferralToSupabase(ref: ReferralRecord): Promise<void> {
   }
 }
 
+// Helper: Fetch & Sync Referrals from Supabase (Solves serverless memory wipe & syncs list)
+async function getReferralsByReferrerId(referrerId: string): Promise<ReferralRecord[]> {
+  let refs = mockReferrals.filter(r => r.referrerId === referrerId);
+  try {
+    // 1. Query Supabase referrals table
+    const { data: dbRefs } = await supabase
+      .from('referrals')
+      .select('*')
+      .eq('referrer_id', referrerId);
+
+    const existingIds = new Set(mockReferrals.map(r => r.id));
+    const existingReferredUserIds = new Set(mockReferrals.map(r => r.referredUserId));
+
+    if (dbRefs && dbRefs.length > 0) {
+      const dbRefsMapped: ReferralRecord[] = dbRefs.map((r: any) => ({
+        id: r.id || `ref_${Math.random()}`,
+        referrerId: r.referrer_id || referrerId,
+        referredUserId: r.referred_user_id || r.referee_id || '',
+        referredUserName: r.referred_user_name || r.referee_name || 'Hunter Member',
+        referredUserEmail: r.referred_user_email || '',
+        referredDeviceId: r.referred_device_id || '',
+        referredDeviceName: r.referred_device_name || 'Mobile Device',
+        isFirstReferral: Boolean(r.is_first_referral || (r.reward_amount && Number(r.reward_amount) > 0)),
+        status: (r.status === 'rewarded' ? 'verified' : (r.status === 'flagged' ? 'failed' : r.status)) as 'pending' | 'verified' | 'failed' || 'pending',
+        failureReason: r.failure_reason || undefined,
+        createdAt: r.created_at || new Date().toISOString(),
+        verifiedAt: r.verified_at || (r.status === 'verified' || r.status === 'rewarded' ? r.created_at : undefined),
+      }));
+
+      for (const mapped of dbRefsMapped) {
+        if (!existingIds.has(mapped.id)) {
+          mockReferrals.push(mapped);
+          refs.push(mapped);
+          existingIds.add(mapped.id);
+          if (mapped.referredUserId) existingReferredUserIds.add(mapped.referredUserId);
+        } else {
+          const idx = mockReferrals.findIndex(m => m.id === mapped.id);
+          if (idx !== -1) {
+            mockReferrals[idx] = { ...mockReferrals[idx], ...mapped };
+          }
+        }
+      }
+    }
+
+    // 2. Also check users table where referred_by === referrerId (catches any missed referral inserts)
+    const { data: referredUsers } = await supabase
+      .from('users')
+      .select('*')
+      .eq('referred_by', referrerId);
+
+    if (referredUsers && referredUsers.length > 0) {
+      for (const u of referredUsers) {
+        if (!existingReferredUserIds.has(u.id)) {
+          const synthRef: ReferralRecord = {
+            id: `ref_synth_${u.id}`,
+            referrerId: referrerId,
+            referredUserId: u.id,
+            referredUserName: u.name || 'Hunter Member',
+            referredUserEmail: u.email || '',
+            referredDeviceId: u.device_id || '',
+            referredDeviceName: u.device_name || 'Mobile Device',
+            isFirstReferral: false,
+            status: 'verified',
+            createdAt: u.created_at || new Date().toISOString(),
+            verifiedAt: u.created_at || new Date().toISOString(),
+          };
+          mockReferrals.push(synthRef);
+          refs.push(synthRef);
+          existingReferredUserIds.add(u.id);
+          await saveReferralToSupabase(synthRef);
+        }
+      }
+    }
+
+    refs = mockReferrals.filter(r => r.referrerId === referrerId);
+  } catch (err) {
+    console.error('Supabase getReferralsByReferrerId error:', err);
+  }
+  return refs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
 // Helper: Save Withdrawal to Supabase
 async function saveWithdrawalToSupabase(w: WithdrawalRecord): Promise<void> {
   if (!w || !w.id) return;
@@ -848,13 +929,7 @@ app.post('/api/auth/register', async (req, res) => {
   // Referral Anti-Fraud Check
   let referredByUserId: string | undefined = undefined;
   if (referralCode) {
-    let referrerUser: User | undefined;
-    for (const u of mockUsers.values()) {
-      if (u.referralCode === referralCode) {
-        referrerUser = u;
-        break;
-      }
-    }
+    const referrerUser = await getUserById(referralCode);
 
     if (referrerUser) {
       // Check Anti-Self Referral Rule (Device ID or Device Name/fingerprint match or same email)
@@ -947,10 +1022,10 @@ app.post('/api/auth/register', async (req, res) => {
 
   // If referred, create Referral Record & evaluate verification rules
   if (referredByUserId) {
-    const referrer = mockUsers.get(referredByUserId);
+    const referrer = mockUsers.get(referredByUserId) || await getUserById(referredByUserId);
     if (referrer) {
       // Check if this is 1st referral or subsequent
-      const referrerPrevReferrals = mockReferrals.filter(r => r.referrerId === referrer.id);
+      const referrerPrevReferrals = await getReferralsByReferrerId(referrer.id);
       const isFirst = referrerPrevReferrals.length === 0;
 
       const refRecord: ReferralRecord = {
@@ -1465,11 +1540,11 @@ app.get('/api/referrals/my/:userId', async (req, res) => {
 
   // Perform referral verification evaluation for pending 12-hour referrals
   const now = Date.now();
-  const referrals = mockReferrals.filter(r => r.referrerId === userId);
+  const referrals = await getReferralsByReferrerId(userId);
 
   for (const ref of referrals) {
     if (ref.status === 'pending') {
-      const referredUser = mockUsers.get(ref.referredUserId);
+      const referredUser = mockUsers.get(ref.referredUserId) || await getUserById(ref.referredUserId);
       if (referredUser) {
         const createdAtTime = new Date(ref.createdAt).getTime();
         const elapsedHours = (now - createdAtTime) / (3600 * 1000);
@@ -1809,19 +1884,8 @@ app.post('/api/withdraw/request', async (req, res) => {
   }
 
   // 1. Referral check: Must have at least 4 referrals
-  const userRefs = mockReferrals.filter(r => r.referrerId === user.id);
-  let totalRefs = userRefs.length;
-  if (totalRefs === 0) {
-    try {
-      const { data: dbRefs } = await supabase
-        .from('referrals')
-        .select('*')
-        .eq('referrer_id', user.id);
-      if (dbRefs) totalRefs = dbRefs.length;
-    } catch (err) {
-      console.error('Supabase fetch referrals count error:', err);
-    }
-  }
+  const userRefs = await getReferralsByReferrerId(user.id);
+  const totalRefs = userRefs.length;
 
   if (totalRefs < 4) {
     return res.status(400).json({
@@ -2176,24 +2240,7 @@ app.post('/api/admin/users/adjust-referrals', async (req, res) => {
       verifiedAt: new Date().toISOString(),
     };
     mockReferrals.push(dummyRef);
-
-    try {
-      await supabase.from('referrals').upsert({
-        id: dummyRef.id,
-        referrer_id: dummyRef.referrerId,
-        referred_user_id: dummyRef.referredUserId,
-        referred_user_name: dummyRef.referredUserName,
-        referred_user_email: dummyRef.referredUserEmail,
-        referred_device_id: dummyRef.referredDeviceId,
-        referred_device_name: dummyRef.referredDeviceName,
-        is_first_referral: false,
-        status: 'verified',
-        created_at: dummyRef.createdAt,
-        verified_at: dummyRef.verifiedAt,
-      });
-    } catch (err) {
-      console.error('Supabase add dummy ref error:', err);
-    }
+    await saveReferralToSupabase(dummyRef);
   }
 
   res.json({

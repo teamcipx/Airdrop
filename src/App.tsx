@@ -15,6 +15,7 @@ import { AdminView } from './components/AdminView';
 import { AuthModal } from './components/AuthModal';
 import { WelcomePopup } from './components/WelcomePopup';
 import { TutorialView } from './components/TutorialView';
+import { MenuView } from './components/MenuView';
 import { OnboardingModal } from './components/OnboardingModal';
 
 export default function App() {
@@ -253,6 +254,17 @@ export default function App() {
             <TutorialView
               fbVideoUrl={publicSettings.tutorialFbVideoUrl}
               onSelectTab={handleTabChange}
+            />
+          )}
+
+          {activeTab === 'menu' && (
+            <MenuView
+              user={user}
+              onSelectTab={handleTabChange}
+              onOpenAuth={() => setShowAuthModal(true)}
+              onLogout={handleLogout}
+              supportUrl={publicSettings.supportTelegramUrl}
+              channelUrl={publicSettings.channelTelegramUrl}
             />
           )}
         </main>

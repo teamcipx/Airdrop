@@ -1,7 +1,7 @@
 import React from 'react';
-import { CheckSquare, History, Wallet, User as UserIcon } from 'lucide-react';
+import { CheckSquare, Wallet, User as UserIcon, LayoutGrid } from 'lucide-react';
 
-export type TabType = 'task' | 'history' | 'airdrop' | 'withdraw' | 'account' | 'top' | 'upgrades' | 'friends' | 'admin' | 'tutorial';
+export type TabType = 'task' | 'history' | 'airdrop' | 'withdraw' | 'account' | 'top' | 'upgrades' | 'friends' | 'admin' | 'tutorial' | 'menu';
 
 interface NavbarProps {
   activeTab: TabType;
@@ -31,15 +31,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, pending
           <span className="text-[10px]">Task</span>
         </button>
 
-        {/* 2. History Tab */}
+        {/* 2. Withdrawal Tab */}
         <button
-          onClick={() => setActiveTab('history')}
+          onClick={() => setActiveTab('withdraw')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all ${
-            activeTab === 'history' ? 'text-amber-400 font-bold scale-105' : 'text-amber-200/50 hover:text-amber-200'
+            activeTab === 'withdraw' ? 'text-amber-400 font-bold scale-105' : 'text-amber-200/50 hover:text-amber-200'
           }`}
         >
-          <History className="w-5 h-5" />
-          <span className="text-[10px]">History</span>
+          <Wallet className="w-5 h-5" />
+          <span className="text-[10px]">Withdrawal</span>
         </button>
 
         {/* 3. Center AirDrop Button */}
@@ -58,18 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, pending
           </div>
         </button>
 
-        {/* 4. Withdrawal Tab */}
-        <button
-          onClick={() => setActiveTab('withdraw')}
-          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all ${
-            activeTab === 'withdraw' ? 'text-amber-400 font-bold scale-105' : 'text-amber-200/50 hover:text-amber-200'
-          }`}
-        >
-          <Wallet className="w-5 h-5" />
-          <span className="text-[10px]">Withdrawal</span>
-        </button>
-
-        {/* 5. Account Tab */}
+        {/* 4. Account Tab */}
         <button
           onClick={() => setActiveTab('account')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all ${
@@ -78,6 +67,17 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, pending
         >
           <UserIcon className="w-5 h-5" />
           <span className="text-[10px]">Account</span>
+        </button>
+
+        {/* 5. Menu Tab */}
+        <button
+          onClick={() => setActiveTab('menu')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all ${
+            activeTab === 'menu' ? 'text-amber-400 font-bold scale-105' : 'text-amber-200/50 hover:text-amber-200'
+          }`}
+        >
+          <LayoutGrid className="w-5 h-5" />
+          <span className="text-[10px]">Menu</span>
         </button>
       </nav>
     </div>

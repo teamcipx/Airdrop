@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { sendOtpApi, registerApi, loginApi } from '../lib/api';
-import { Mail, Key, User as UserIcon, ShieldCheck, X, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
+import { Mail, Key, User as UserIcon, ShieldCheck, X, Sparkles, AlertCircle, ArrowRight, Inbox, MessageCircle, Video } from 'lucide-react';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -176,8 +176,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, initia
             <p className="text-xs text-amber-200/80 mb-4 px-2">
               আপনি কি নিশ্চিত যে আপনার ইমেইল ঠিকানাটি সঠিক? ওটিপি কোড এই ঠিকানায় পাঠানো হবে:
             </p>
-            <div className="bg-[#140b08] border border-amber-500/50 px-4 py-2.5 rounded-2xl font-mono text-amber-300 font-bold text-xs mb-4 w-full break-all shadow-inner">
+            <div className="bg-[#140b08] border border-amber-500/50 px-4 py-2.5 rounded-2xl font-mono text-amber-300 font-bold text-xs mb-3 w-full break-all shadow-inner">
               📧 {email}
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl text-[11px] text-amber-200/90 mb-4 text-left">
+              💡 <strong className="text-amber-300">নোট:</strong> ওটিপি পাঠানোর পর জিমেইলের <strong>Inbox</strong> এবং <strong className="text-orange-400">Spam / Junk Box</strong> চেক করবেন।
             </div>
             <div className="flex items-center gap-2 w-full">
               <button
@@ -294,12 +297,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, initia
             </form>
           ) : (
             <form onSubmit={handleRegister} className="flex flex-col gap-3 text-xs">
-              <div className="text-center py-2">
+              <div className="text-center py-1">
                 <p className="text-xs text-amber-200">
                   Enter 6-digit OTP code sent to <strong className="text-amber-400 font-mono">{email}</strong>
                 </p>
                 <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">
                   <span>কোটা ব্যবহার: <strong>{sessionStorage.getItem(`otp_count_${email.toLowerCase().trim()}`) || '1'}/2 বার</strong></span>
+                </div>
+              </div>
+
+              {/* Special Mailbox & Support Notice */}
+              <div className="bg-gradient-to-br from-amber-950/70 via-[#23150e] to-orange-950/50 border border-amber-500/40 rounded-2xl p-3 space-y-2.5 shadow-lg">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <Inbox className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1 text-left">
+                    <h4 className="text-xs font-black text-amber-200 flex items-center gap-1">
+                      <span>ইনবক্স ও স্প্যাম বক্স চেক করুন! 📩</span>
+                    </h4>
+                    <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                      আপনার জিমেইলের <strong>Inbox</strong> চেক করুন। যদি ইনবক্সে কোড না পান, তবে অবশ্যই জিমেইলের <strong className="text-orange-400">Spam / Junk Box</strong> ফোল্ডারটি চেক করবেন!
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                  <a
+                    href="https://t.me/nxsupport"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-cyan-300 hover:text-cyan-200 font-bold transition-all bg-cyan-950/60 px-2.5 py-1.5 rounded-xl border border-cyan-500/40 shadow-sm"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>সাপোর্টে মেসেজ দিন</span>
+                  </a>
+                  <a
+                    href="https://t.me/nxchannel"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-emerald-300 hover:text-emerald-200 font-bold transition-all bg-emerald-950/60 px-2.5 py-1.5 rounded-xl border border-emerald-500/40 shadow-sm"
+                  >
+                    <Video className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>ভিডিও দেখুন</span>
+                  </a>
                 </div>
               </div>
 
