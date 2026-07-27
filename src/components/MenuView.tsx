@@ -181,7 +181,7 @@ export const MenuView: React.FC<MenuViewProps> = ({
           <div className="text-right">
             <div className="text-[11px] text-amber-300/80 font-medium">ব্যালেন্স</div>
             <div className="text-sm font-black text-emerald-400 font-mono">
-              ৳{(user.takaBalance || (user.balance * 0.002)).toFixed(2)}
+              ৳{(user.takaBalance || 0).toLocaleString()}
             </div>
           </div>
         ) : (
@@ -222,7 +222,7 @@ export const MenuView: React.FC<MenuViewProps> = ({
               <div className="flex items-center gap-3 mt-1 text-[11px]">
                 <span className="text-amber-400 font-bold font-mono">🪙 {user.balance.toLocaleString()}</span>
                 <span className="text-amber-500/40">•</span>
-                <span className="text-emerald-400 font-bold font-mono">৳{(user.takaBalance || (user.balance * 0.002)).toFixed(2)}</span>
+                <span className="text-emerald-400 font-bold font-mono">৳{(user.takaBalance || 0).toLocaleString()}</span>
               </div>
             </div>
           </div>

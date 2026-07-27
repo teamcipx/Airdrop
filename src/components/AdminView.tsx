@@ -46,7 +46,7 @@ export const AdminView: React.FC = () => {
   // New task state
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [taskReward, setTaskReward] = useState<number>(500);
+  const [taskReward, setTaskReward] = useState<number>(10);
   const [taskType, setTaskType] = useState<'one_time' | 'daily'>('one_time');
   const [taskCategory, setTaskCategory] = useState<string>('social');
   const [taskUrl, setTaskUrl] = useState('');

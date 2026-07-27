@@ -56,7 +56,7 @@ const mockTasks: Task[] = [
     id: 'task_1',
     title: 'Join HedHog Official Telegram',
     description: 'Subscribe to our official Telegram channel for $NXB announcements and drops.',
-    reward: 100,
+    reward: 10,
     type: 'one_time',
     category: 'telegram',
     actionUrl: 'https://t.me',
@@ -67,7 +67,7 @@ const mockTasks: Task[] = [
     id: 'task_2',
     title: 'Subscribe to YouTube Channel',
     description: 'Watch our latest $NXB gameplay video and subscribe.',
-    reward: 150,
+    reward: 15,
     type: 'one_time',
     category: 'youtube',
     actionUrl: 'https://youtube.com',
@@ -78,7 +78,7 @@ const mockTasks: Task[] = [
     id: 'task_3',
     title: 'Daily Check-in & Share',
     description: 'Log into $NXB Airdrop today and share your status with friends.',
-    reward: 50,
+    reward: 5,
     type: 'daily',
     category: 'social',
     actionUrl: 'https://x.com',
@@ -426,6 +426,7 @@ async function saveUserToSupabase(user: User): Promise<void> {
         email: user.email,
         role: user.role,
         balance: user.balance,
+        taka_balance: user.takaBalance || 0,
         energy: user.energy,
         max_energy: user.maxEnergy,
         energy_level: user.energyLevel,
@@ -449,6 +450,7 @@ async function saveUserToSupabase(user: User): Promise<void> {
           email: user.email,
           role: user.role,
           balance: user.balance,
+          taka_balance: user.takaBalance || 0,
         };
         await supabase.from('users').upsert(barePayload, { onConflict: 'email' });
       }
@@ -1457,7 +1459,31 @@ app.get('/api/tasks', async (req, res) => {
 app.post('/api/tasks/submit', async (req, res) => {
   const { taskId, userId, proofImageBase64 } = req.body;
   const user = await getUserById(userId);
-  const task = mockTasks.find(t => t.id === taskId);
+  let task: Task | undefined;
+  try {
+    const { data: dbTask } = await supabase.from('tasks').select('*').eq('id', taskId).maybeSingle();
+    if (dbTask) {
+      task = {
+        id: dbTask.id,
+        title: dbTask.title,
+        description: dbTask.description || '',
+        reward: Number(dbTask.reward) || 0,
+        type: dbTask.type || 'one_time',
+        category: dbTask.category || 'social',
+        actionUrl: dbTask.action_url || '',
+        requiresProof: Boolean(dbTask.requires_proof),
+        createdAt: dbTask.created_at || new Date().toISOString(),
+      };
+      const idx = mockTasks.findIndex(t => t.id === task!.id);
+      if (idx !== -1) mockTasks[idx] = task;
+      else mockTasks.push(task);
+    }
+  } catch (err) {
+    console.error('Error fetching task from Supabase on submit:', err);
+  }
+  if (!task) {
+    task = mockTasks.find(t => t.id === taskId);
+  }
 
   if (!user || !task) {
     return res.status(400).json({ error: 'Invalid user or task ID' });
@@ -1834,30 +1860,31 @@ app.post('/api/admin/submissions/review', async (req, res) => {
   if (rejectionReason) sub.rejectionReason = rejectionReason;
 
   if (status === 'approved' && previousStatus !== 'approved') {
-    const user = mockUsers.get(sub.userId) || await getUserById(sub.userId);
-    let task = mockTasks.find(t => t.id === sub.taskId);
-    if (!task) {
-      try {
-        const { data: dbTask } = await supabase.from('tasks').select('*').eq('id', sub.taskId).maybeSingle();
-        if (dbTask) {
-          task = {
-            id: dbTask.id,
-            title: dbTask.title,
-            description: dbTask.description || '',
-            reward: Number(dbTask.reward) || 0,
-            type: dbTask.type || 'one_time',
-            category: dbTask.category || 'social',
-            actionUrl: dbTask.action_url || '',
-            requiresProof: Boolean(dbTask.requires_proof),
-            createdAt: dbTask.created_at || new Date().toISOString(),
-          };
-          const idx = mockTasks.findIndex(t => t.id === task!.id);
-          if (idx !== -1) mockTasks[idx] = task;
-          else mockTasks.push(task);
-        }
-      } catch (err) {
-        console.error('Error refreshing task on submission review:', err);
+    const user = await getUserById(sub.userId) || mockUsers.get(sub.userId);
+    let task: Task | undefined;
+    try {
+      const { data: dbTask } = await supabase.from('tasks').select('*').eq('id', sub.taskId).maybeSingle();
+      if (dbTask) {
+        task = {
+          id: dbTask.id,
+          title: dbTask.title,
+          description: dbTask.description || '',
+          reward: Number(dbTask.reward) || 0,
+          type: dbTask.type || 'one_time',
+          category: dbTask.category || 'social',
+          actionUrl: dbTask.action_url || '',
+          requiresProof: Boolean(dbTask.requires_proof),
+          createdAt: dbTask.created_at || new Date().toISOString(),
+        };
+        const idx = mockTasks.findIndex(t => t.id === task!.id);
+        if (idx !== -1) mockTasks[idx] = task;
+        else mockTasks.push(task);
       }
+    } catch (err) {
+      console.error('Error refreshing task on submission review:', err);
+    }
+    if (!task) {
+      task = mockTasks.find(t => t.id === sub.taskId);
     }
     if (user && task) {
       user.takaBalance = (Number(user.takaBalance) || 0) + (Number(task.reward) || 0);
@@ -1878,7 +1905,7 @@ app.post('/api/admin/tasks', async (req, res) => {
     id: `task_${Date.now()}`,
     title,
     description,
-    reward: Number(reward) || 100,
+    reward: reward !== undefined ? Number(reward) : 10,
     type: type || 'one_time',
     category: category || 'social',
     actionUrl,
@@ -1896,7 +1923,28 @@ app.put('/api/admin/tasks/:id', async (req, res) => {
   const { id } = req.params;
   const { title, description, reward, type, category, actionUrl, requiresProof } = req.body;
 
-  const index = mockTasks.findIndex(t => t.id === id);
+  let index = mockTasks.findIndex(t => t.id === id);
+  if (index === -1) {
+    try {
+      const { data: dbTask } = await supabase.from('tasks').select('*').eq('id', id).maybeSingle();
+      if (dbTask) {
+        mockTasks.push({
+          id: dbTask.id,
+          title: dbTask.title,
+          description: dbTask.description || '',
+          reward: Number(dbTask.reward) || 0,
+          type: dbTask.type || 'one_time',
+          category: dbTask.category || 'social',
+          actionUrl: dbTask.action_url || '',
+          requiresProof: Boolean(dbTask.requires_proof),
+          createdAt: dbTask.created_at || new Date().toISOString(),
+        });
+        index = mockTasks.length - 1;
+      }
+    } catch (err) {
+      console.error('Error finding task in Supabase during put:', err);
+    }
+  }
   if (index === -1) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }

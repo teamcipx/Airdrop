@@ -31,7 +31,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   // New task form state
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [taskReward, setTaskReward] = useState(100);
+  const [taskReward, setTaskReward] = useState(10);
   const [taskType, setTaskType] = useState<'one_time' | 'daily'>('one_time');
   const [taskCategory, setTaskCategory] = useState<'telegram' | 'youtube' | 'social'>('social');
   const [taskUrl, setTaskUrl] = useState('');
