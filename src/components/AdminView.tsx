@@ -637,7 +637,7 @@ export const AdminView: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="font-bold text-amber-300 block mb-1">Reward Coins</label>
+              <label className="font-bold text-amber-300 block mb-1">Reward (৳ Taka / BDT)</label>
               <input
                 type="number"
                 required
@@ -725,7 +725,7 @@ export const AdminView: React.FC = () => {
                     </div>
                     <p className="text-[11px] text-amber-300/70 mt-1 line-clamp-1">{t.description}</p>
                     <div className="flex items-center gap-3 mt-2 text-[10px] font-mono text-amber-400">
-                      <span>Reward: 🪙 {t.reward} Coins</span>
+                      <span>Reward: ৳ {t.reward} Taka</span>
                       {t.requiresProof && <span className="text-emerald-400">📸 Proof Req</span>}
                       {t.actionUrl && <a href={t.actionUrl} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">Link ↗</a>}
                     </div>
@@ -819,12 +819,13 @@ export const AdminView: React.FC = () => {
               rows={3}
               value={imgbbKey}
               onChange={e => setImgbbKey(e.target.value)}
-              placeholder="Enter multiple ImgBB API keys separated by commas, spaces, or newlines (e.g. key1, key2, key3)..."
+              placeholder="Enter multiple ImgBB API keys separated by commas, spaces, or newlines (e.g. x, y, z)..."
               className="w-full bg-[#140b08] border border-[#3e2a22] rounded-xl p-2.5 text-amber-100 font-mono text-[11px]"
             />
-            <p className="text-[10px] text-amber-300/70 mt-1 leading-relaxed">
-              ⚡ <strong className="text-amber-400">Smart Failover:</strong> You can paste multiple keys separated by comma or newlines. When an upload occurs, if any key fails or reaches rate limits, the system automatically ignores it and rotates to the next active key! Get free keys at <a href="https://api.imgbb.com/" target="_blank" rel="noreferrer" className="text-amber-400 underline">api.imgbb.com</a>.
-            </p>
+            <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl mt-1.5 text-[11px] text-amber-200 leading-relaxed">
+              💡 <strong className="text-amber-300 font-black">৩টি API Key (যেমন: x, y, z) কিভাবে একসাথে কাজ করে?</strong><br />
+              হ্যাঁ! আপনি ১টি ফিল্ডেই কমা (<code>,</code>) দিয়ে ৩টি বা তার বেশি API Key দিতে পারবেন (যেমন: <code>key1, key2, key3</code>)। আমাদের সিস্টেমে <strong>Smart Failover Rotation</strong> চালু আছে—যদি কোনো কারণে <code>z</code> বা যেকোনো একটি কি (Key) তে error বা limit শেষ হয়ে যায়, সিস্টেম স্বয়ংক্রিয়ভাবে সেটি বাদ দিয়ে পরের একটিভ key দিয়ে ছবি আপলোড করবে! কোনো কি বাদ যাবে না।
+            </div>
           </div>
 
           <div>

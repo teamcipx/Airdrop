@@ -1463,6 +1463,38 @@ app.post('/api/tasks/submit', async (req, res) => {
     return res.status(400).json({ error: 'Invalid user or task ID' });
   }
 
+  // Prevent duplicate task submissions
+  const existingSub = mockSubmissions.find(
+    s => s.userId === userId && s.taskId === taskId && (s.status === 'pending' || s.status === 'approved')
+  );
+  if (existingSub) {
+    return res.status(400).json({
+      error: existingSub.status === 'pending'
+        ? 'আপনি ইতোমধ্যে এই টাস্কটি সাবমিট করেছেন, এডমিন রিভিউ করছেন!'
+        : 'আপনি ইতোমধ্যে এই টাস্কটি সম্পন্ন করে রিওয়ার্ড পেয়েছেন!'
+    });
+  }
+
+  try {
+    const { data: dbExisting } = await supabase
+      .from('task_submissions')
+      .select('id, status')
+      .eq('user_id', userId)
+      .eq('task_id', taskId)
+      .in('status', ['pending', 'approved'])
+      .maybeSingle();
+
+    if (dbExisting) {
+      return res.status(400).json({
+        error: dbExisting.status === 'pending'
+          ? 'আপনি ইতোমধ্যে এই টাস্কটি সাবমিট করেছেন, এডমিন রিভিউ করছেন!'
+          : 'আপনি ইতোমধ্যে এই টাস্কটি সম্পন্ন করে রিওয়ার্ড পেয়েছেন!'
+      });
+    }
+  } catch (err) {
+    console.error('Error checking duplicate task submission:', err);
+  }
+
   let imageUrl = '';
   if (task.requiresProof && proofImageBase64) {
     imageUrl = await uploadToImgBB(proofImageBase64);
@@ -1481,7 +1513,7 @@ app.post('/api/tasks/submit', async (req, res) => {
 
   if (!task.requiresProof) {
     // Auto approve task reward in Taka
-    user.takaBalance = (user.takaBalance || 0) + task.reward;
+    user.takaBalance = (Number(user.takaBalance) || 0) + (Number(task.reward) || 0);
   }
 
   mockSubmissions.push(submission);
@@ -1796,15 +1828,39 @@ app.post('/api/admin/submissions/review', async (req, res) => {
     return res.status(404).json({ error: 'Submission not found' });
   }
 
+  const previousStatus = sub.status;
   sub.status = status;
   sub.reviewedAt = new Date().toISOString();
   if (rejectionReason) sub.rejectionReason = rejectionReason;
 
-  if (status === 'approved') {
+  if (status === 'approved' && previousStatus !== 'approved') {
     const user = mockUsers.get(sub.userId) || await getUserById(sub.userId);
-    const task = mockTasks.find(t => t.id === sub.taskId);
+    let task = mockTasks.find(t => t.id === sub.taskId);
+    if (!task) {
+      try {
+        const { data: dbTask } = await supabase.from('tasks').select('*').eq('id', sub.taskId).maybeSingle();
+        if (dbTask) {
+          task = {
+            id: dbTask.id,
+            title: dbTask.title,
+            description: dbTask.description || '',
+            reward: Number(dbTask.reward) || 0,
+            type: dbTask.type || 'one_time',
+            category: dbTask.category || 'social',
+            actionUrl: dbTask.action_url || '',
+            requiresProof: Boolean(dbTask.requires_proof),
+            createdAt: dbTask.created_at || new Date().toISOString(),
+          };
+          const idx = mockTasks.findIndex(t => t.id === task!.id);
+          if (idx !== -1) mockTasks[idx] = task;
+          else mockTasks.push(task);
+        }
+      } catch (err) {
+        console.error('Error refreshing task on submission review:', err);
+      }
+    }
     if (user && task) {
-      user.takaBalance = (user.takaBalance || 0) + task.reward;
+      user.takaBalance = (Number(user.takaBalance) || 0) + (Number(task.reward) || 0);
       await saveUserToSupabase(user);
     }
   }
