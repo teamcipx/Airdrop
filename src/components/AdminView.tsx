@@ -286,7 +286,8 @@ export const AdminView: React.FC = () => {
   };
 
   const pendingWithdrawalsCount = withdrawals.filter(w => w.status === 'pending').length;
-  const pendingSubmissionsCount = submissions.filter(s => s.status === 'pending').length;
+  const pendingSubmissions = submissions.filter(s => s.status === 'pending');
+  const pendingSubmissionsCount = pendingSubmissions.length;
 
   return (
     <div className="p-4 space-y-4 pb-24 text-amber-50">
@@ -494,16 +495,16 @@ export const AdminView: React.FC = () => {
         <div className="bg-[#211410] p-4 rounded-3xl border border-[#442f26] shadow-xl space-y-3">
           <h2 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
             <ImageIcon className="w-4 h-4 text-amber-400" />
-            <span>Task Proof Submissions ({submissions.length})</span>
+            <span>Pending Task Proof Submissions ({pendingSubmissionsCount})</span>
           </h2>
 
-          {submissions.length === 0 ? (
+          {pendingSubmissions.length === 0 ? (
             <p className="text-xs text-amber-300/50 text-center py-6 bg-[#140b08] rounded-2xl border border-[#38251e]">
-              No task submissions available to review.
+              No pending task submissions to review.
             </p>
           ) : (
             <div className="space-y-3">
-              {submissions.map(sub => (
+              {pendingSubmissions.map(sub => (
                 <div key={sub.id} className="bg-[#140b08] p-3.5 rounded-2xl border border-[#38251e] space-y-2 text-xs">
                   <div className="flex justify-between items-start">
                     <div>

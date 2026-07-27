@@ -110,8 +110,15 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
   };
 
   const filteredTasks = tasks.filter(t => {
-    if (filterTab === 'daily') return t.type === 'daily';
-    if (filterTab === 'one_time') return t.type === 'one_time';
+    if (filterTab === 'daily' && t.type !== 'daily') return false;
+    if (filterTab === 'one_time' && t.type !== 'one_time') return false;
+    
+    // Hide tasks that have already been submitted and are currently pending or approved
+    const sub = submissions.find(s => s.taskId === t.id);
+    if (sub && (sub.status === 'pending' || sub.status === 'approved')) {
+      return false;
+    }
+
     return true;
   });
 
@@ -185,7 +192,12 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
 
       {/* Task List Items */}
       <div className="flex flex-col gap-3.5">
-        {filteredTasks.map(task => {
+        {filteredTasks.length === 0 ? (
+          <div className="bg-[#1f130f] p-8 rounded-3xl border border-[#3b2820] text-center text-xs text-amber-300/60 font-bold">
+            কোনো টাস্ক অবশিষ্ট নেই! আপনি সব টাস্ক সম্পন্ন করেছেন অথবা নতুন টাস্কের জন্য অপেক্ষা করুন।
+          </div>
+        ) : (
+          filteredTasks.map(task => {
           const status = getTaskStatus(task.id);
           return (
             <div
@@ -240,7 +252,7 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
               </div>
             </div>
           );
-        })}
+        }))}
       </div>
 
       {/* Task Proof Submission Modal */}
