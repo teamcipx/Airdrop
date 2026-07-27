@@ -60,11 +60,25 @@ export const AdminView: React.FC = () => {
     totalCount: number;
     brevoUsedToday?: number;
     resendUsedToday?: number;
-  } | null>(null);
+    history?: { date: string; count: number }[];
+  }>({
+    todayDate: new Date().toISOString().split('T')[0],
+    todayCount: 0,
+    totalCount: 0,
+    brevoUsedToday: 0,
+    resendUsedToday: 0,
+    history: []
+  });
 
   useEffect(() => {
     loadAllData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      loadOtpStats();
+    }
+  }, [activeTab]);
 
   const loadAllData = async () => {
     setLoadingData(true);
@@ -388,34 +402,65 @@ export const AdminView: React.FC = () => {
         </button>
       </div>
 
-      {/* Daily OTP Sent Status Dashboard ("Daily koto otp patabo hoiyese Pannel a dekhabe") */}
-      {otpStats && (
-        <div className="bg-gradient-to-r from-[#2a1711] via-[#24130d] to-[#1e100b] p-3.5 rounded-2xl border border-amber-500/40 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold shrink-0 shadow-inner text-base">
-              ⚡
+      {/* Daily & Total Email Sent Status Dashboard */}
+      <div className="bg-gradient-to-r from-[#2c1811] via-[#24130d] to-[#1e100b] p-4 rounded-2xl border border-amber-500/50 shadow-xl space-y-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/20 pb-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold shrink-0 shadow-inner">
+              <Mail className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <div className="font-extrabold text-amber-100 flex items-center gap-2">
-                <span>আজকে পাঠানো মোট ওটিপি (OTP):</span>
-                <span className="text-amber-400 font-mono text-sm px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 font-black">
-                  {otpStats.todayCount} টি
-                </span>
-              </div>
-              <div className="text-[11px] text-amber-300/70 mt-0.5 flex flex-wrap items-center gap-2">
-                <span>সর্বমোট: <strong className="text-amber-200 font-mono">{otpStats.totalCount}</strong> টি</span>
-                <span>•</span>
-                <span>Brevo: <strong className="font-mono text-emerald-400">{otpStats.brevoUsedToday || 0}</strong></span>
-                <span>•</span>
-                <span>Resend: <strong className="font-mono text-orange-400">{otpStats.resendUsedToday || 0}</strong></span>
-              </div>
+              <h3 className="font-black text-amber-100 text-sm flex items-center gap-1.5">
+                <span>📧 মোট ইমেইল সেন্ড স্ট্যাটাস (Email Sent Monitor)</span>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-normal">Live Active</span>
+              </h3>
+              <p className="text-[10px] text-amber-300/70">ইউজারদের পাঠানো ওটিপি ও ইমেইলের রিয়েল-টাইম হিসাব</p>
             </div>
           </div>
-          <div className="bg-[#140b08] px-3 py-1.5 rounded-xl border border-[#3e281e] text-[10px] text-amber-300/80 font-medium text-center shrink-0">
-            🛡️ ১ ইমেইলে সর্বোচ্চ ২ ওটিপি লিমিট সক্রিয়
+          <button
+            onClick={() => {
+              loadOtpStats();
+              setMessage('ইমেইল সেন্ড স্ট্যাটাস রিফ্রেশ করা হয়েছে!');
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold transition-all text-[11px] shadow-sm"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>রিফ্রেশ স্ট্যাটাস</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="bg-[#170c08] p-2.5 rounded-xl border border-amber-500/30 flex flex-col justify-between">
+            <span className="text-[10px] text-amber-300/70">আজকে পাঠানো হয়েছে</span>
+            <div className="text-base font-black text-amber-400 font-mono mt-1">
+              {otpStats?.todayCount || 0} <span className="text-xs font-normal">টি ইমেইল</span>
+            </div>
+          </div>
+          <div className="bg-[#170c08] p-2.5 rounded-xl border border-amber-500/30 flex flex-col justify-between">
+            <span className="text-[10px] text-amber-300/70">সর্বমোট পাঠানো হয়েছে</span>
+            <div className="text-base font-black text-amber-200 font-mono mt-1">
+              {otpStats?.totalCount || 0} <span className="text-xs font-normal">টি ইমেইল</span>
+            </div>
+          </div>
+          <div className="bg-[#170c08] p-2.5 rounded-xl border border-emerald-500/30 flex flex-col justify-between">
+            <span className="text-[10px] text-emerald-300/80">Brevo SMTP (Primary)</span>
+            <div className="text-sm font-bold text-emerald-400 font-mono mt-1">
+              {otpStats?.brevoUsedToday || 0} <span className="text-xs text-emerald-300/60 font-normal">/ 290 লিমিট</span>
+            </div>
+          </div>
+          <div className="bg-[#170c08] p-2.5 rounded-xl border border-orange-500/30 flex flex-col justify-between">
+            <span className="text-[10px] text-orange-300/80">Resend SMTP (Backup)</span>
+            <div className="text-sm font-bold text-orange-400 font-mono mt-1">
+              {otpStats?.resendUsedToday || 0} <span className="text-xs text-orange-300/60 font-normal">/ 98 লিমিট</span>
+            </div>
           </div>
         </div>
-      )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-[#140b08] px-3 py-1.5 rounded-xl border border-[#3e281e] text-[10px] text-amber-300/80 font-medium">
+          <span>🛡️ স্প্যাম সুরক্ষায় প্রতি ইমেইলে সর্বোচ্চ ২ বার ওটিপি রিকোয়েস্ট লিমিট সক্রিয় আছে।</span>
+          <span className="text-amber-400">⚡ স্মার্ট ফেইলওভার: Brevo লিমিট শেষ হলে Resend দিয়ে স্বয়ংক্রিয় ইমেইল যাবে।</span>
+        </div>
+      </div>
 
       {message && (
         <div className="bg-amber-500/20 border border-amber-500/50 text-amber-200 text-xs p-3 rounded-2xl flex items-center justify-between">
@@ -709,11 +754,58 @@ export const AdminView: React.FC = () => {
 
       {/* 4. API Keys & Settings Tab */}
       {activeTab === 'settings' && (
-        <form onSubmit={handleSaveSettings} className="bg-[#211410] p-4 rounded-3xl border border-[#442f26] shadow-xl space-y-3 text-xs">
+        <form onSubmit={handleSaveSettings} className="bg-[#211410] p-4 rounded-3xl border border-[#442f26] shadow-xl space-y-4 text-xs">
           <h2 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
             <Key className="w-4 h-4 text-amber-400" />
             <span>API Keys & System Configuration</span>
           </h2>
+
+          {/* Dedicated Email Sent Analytics & Daily History Box */}
+          <div className="bg-gradient-to-br from-[#1c0f0a] to-[#140b08] p-3.5 rounded-2xl border border-amber-500/40 space-y-3 shadow-inner">
+            <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+              <span className="font-extrabold text-amber-200 flex items-center gap-1.5">
+                <Mail className="w-4 h-4 text-amber-400" />
+                <span>📧 ইমেইল সেন্ডিং বিস্তারিত রিপোর্ট (SMTP Usage Report)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => loadOtpStats()}
+                className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 px-2 py-1 rounded-lg border border-amber-500/40 flex items-center gap-1 font-bold transition-all"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>রিফ্রেশ</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div className="bg-[#211410] p-2 rounded-xl border border-amber-500/30">
+                <div className="text-[10px] text-amber-300/70">আজকের ইমেইল সেন্ড</div>
+                <div className="text-lg font-black text-amber-400 font-mono mt-0.5">{otpStats?.todayCount || 0} টি</div>
+              </div>
+              <div className="bg-[#211410] p-2 rounded-xl border border-amber-500/30">
+                <div className="text-[10px] text-amber-300/70">সর্বমোট ইমেইল সেন্ড</div>
+                <div className="text-lg font-black text-amber-200 font-mono mt-0.5">{otpStats?.totalCount || 0} টি</div>
+              </div>
+            </div>
+
+            {/* Daily History List if available */}
+            {otpStats?.history && otpStats.history.length > 0 && (
+              <div className="space-y-1 pt-1">
+                <div className="text-[10px] font-bold text-amber-300/80 mb-1 flex items-center justify-between">
+                  <span>📅 গত দিনগুলোর ইমেইল সেন্ড হিস্ট্রি:</span>
+                  <span>তারিখ ও সংখ্যা</span>
+                </div>
+                <div className="max-h-28 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                  {otpStats.history.slice(0, 7).map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-[#140b08] px-2.5 py-1 rounded-lg border border-[#34211a] text-[11px]">
+                      <span className="font-mono text-amber-200">{item.date}</span>
+                      <span className="font-bold text-amber-400 font-mono">{item.count} টি ইমেইল</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div>
             <label className="font-bold text-amber-300 flex items-center justify-between mb-1">

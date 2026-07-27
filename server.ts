@@ -231,6 +231,10 @@ async function sendOtpEmail(email: string, otpCode: string): Promise<{ success: 
       });
       if (res.ok) {
         systemSettings.brevoUsedToday++;
+        const todayStr = new Date().toISOString().split('T')[0];
+        const currentToday = mockDailyOtpStats.get(todayStr) || 0;
+        mockDailyOtpStats.set(todayStr, currentToday + 1);
+        saveSystemSettingsToSupabase().catch(err => console.error('Failed to save Brevo email count to Supabase:', err));
         return { success: true, providerUsed: 'Brevo', message: 'OTP sent via Brevo' };
       } else {
         const errText = await res.text();
@@ -259,6 +263,10 @@ async function sendOtpEmail(email: string, otpCode: string): Promise<{ success: 
       });
       if (res.ok) {
         systemSettings.resendUsedToday++;
+        const todayStr = new Date().toISOString().split('T')[0];
+        const currentToday = mockDailyOtpStats.get(todayStr) || 0;
+        mockDailyOtpStats.set(todayStr, currentToday + 1);
+        saveSystemSettingsToSupabase().catch(err => console.error('Failed to save Resend email count to Supabase:', err));
         return { success: true, providerUsed: 'Resend', message: 'OTP sent via Resend' };
       } else {
         const errText = await res.text();
@@ -1670,7 +1678,8 @@ app.get('/api/admin/settings', async (req, res) => {
   res.json({ success: true, settings: systemSettings });
 });
 
-app.get('/api/admin/otp-stats', (req, res) => {
+app.get('/api/admin/otp-stats', async (req, res) => {
+  await loadSystemSettingsFromSupabase();
   const todayStr = new Date().toISOString().split('T')[0];
   const todayCount = mockDailyOtpStats.get(todayStr) || (systemSettings.brevoUsedToday + systemSettings.resendUsedToday);
   let totalCount = 0;
