@@ -37,6 +37,7 @@ export const AdminView: React.FC = () => {
   const [supportUrl, setSupportUrl] = useState('');
   const [channelUrl, setChannelUrl] = useState('');
   const [welcomeText, setWelcomeText] = useState('');
+  const [requireEmailOtp, setRequireEmailOtp] = useState<boolean>(true);
 
   // User adjustment state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -162,6 +163,7 @@ export const AdminView: React.FC = () => {
       setSupportUrl(res.settings.supportTelegramUrl || 'https://t.me/xnhelpline');
       setChannelUrl(res.settings.channelTelegramUrl || 'https://t.me/xnrewared');
       setWelcomeText(res.settings.popupWelcomeText || 'ভিডিও দেখুন! (Tutorial)');
+      setRequireEmailOtp(res.settings.requireEmailOtp !== false);
     }
   };
 
@@ -209,6 +211,7 @@ export const AdminView: React.FC = () => {
       supportTelegramUrl: supportUrl.trim(),
       channelTelegramUrl: channelUrl.trim(),
       popupWelcomeText: welcomeText.trim(),
+      requireEmailOtp,
     });
 
     if (res.success && res.settings) {
@@ -826,6 +829,33 @@ export const AdminView: React.FC = () => {
               💡 <strong className="text-amber-300 font-black">৩টি API Key (যেমন: x, y, z) কিভাবে একসাথে কাজ করে?</strong><br />
               হ্যাঁ! আপনি ১টি ফিল্ডেই কমা (<code>,</code>) দিয়ে ৩টি বা তার বেশি API Key দিতে পারবেন (যেমন: <code>key1, key2, key3</code>)। আমাদের সিস্টেমে <strong>Smart Failover Rotation</strong> চালু আছে—যদি কোনো কারণে <code>z</code> বা যেকোনো একটি কি (Key) তে error বা limit শেষ হয়ে যায়, সিস্টেম স্বয়ংক্রিয়ভাবে সেটি বাদ দিয়ে পরের একটিভ key দিয়ে ছবি আপলোড করবে! কোনো কি বাদ যাবে না।
             </div>
+          </div>
+
+          {/* Email Verification OTP Toggle Button */}
+          <div className="bg-[#1c110d] border-2 border-amber-500/50 rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <label className="font-extrabold text-amber-200 text-sm flex items-center gap-2">
+                <Mail className="w-5 h-5 text-amber-400" />
+                <span>ইমেইল ভেরিফিকেশন ওটিপি (Email OTP Verification)</span>
+              </label>
+              <p className="text-[11px] text-amber-300/80 leading-relaxed mt-1">
+                <strong>অন থাকলে:</strong> নতুন অ্যাকাউন্ট তৈরিতে জিমেইলে ৬ ডিজিটের ওটিপি যাবে এবং ভেরিফাই করতে হবে।<br />
+                <strong>অফ থাকলে:</strong> ওটিপি ভেরিফিকেশন ছাড়াই সরাসরি রেজিস্ট্রেশন হবে। (দৈনিক ইমেইল লিমিট শেষ হলেও অটো ওটিপি বন্ধ হবে!)<br />
+                <span className="text-emerald-400 font-bold">🛡️ বিঃদ্রঃ ওটিপি অফ থাকলেও ১ ডিভাইস ১ অ্যাকাউন্ট এবং হার্ড রেফার সুরক্ষা ১০০% সক্রিয় থাকবে!</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRequireEmailOtp(!requireEmailOtp)}
+              className={`px-5 py-3 rounded-xl font-black text-xs tracking-wider uppercase transition-all shadow-lg flex items-center gap-2 cursor-pointer shrink-0 ${
+                requireEmailOtp
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-black shadow-emerald-500/30'
+                  : 'bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-rose-600/30 animate-pulse'
+              }`}
+            >
+              <span className={`w-3 h-3 rounded-full ${requireEmailOtp ? 'bg-black animate-ping' : 'bg-white'}`} />
+              <span>{requireEmailOtp ? '✅ ওটিপি চালু আছে (ON)' : '❌ ওটিপি বন্ধ আছে (OFF)'}</span>
+            </button>
           </div>
 
           <div>

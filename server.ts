@@ -44,7 +44,27 @@ let systemSettings: SystemSettings = {
   supportTelegramUrl: 'https://t.me/xnhelpline',
   channelTelegramUrl: 'https://t.me/xnrewared',
   popupWelcomeText: 'ভিডিও দেখুন! (Tutorial)',
+  requireEmailOtp: true,
 };
+
+// Helper: Check if email OTP is required (checks admin toggle and daily SMTP limits)
+function isEmailVerificationRequired(): boolean {
+  if (systemSettings.requireEmailOtp === false) {
+    return false; // Admin explicitly turned off email OTP in Admin Panel
+  }
+
+  const activeBrevoKey = (process.env.BREVO_API_KEY || systemSettings.brevoApiKey || '').trim();
+  const activeResendKey = (process.env.RESEND_API_KEY || systemSettings.resendApiKey || '').trim();
+
+  const brevoAvailable = activeBrevoKey && (systemSettings.brevoUsedToday < systemSettings.brevoDailyLimit);
+  const resendAvailable = activeResendKey && (systemSettings.resendUsedToday < systemSettings.resendDailyLimit);
+
+  if (!brevoAvailable && !resendAvailable) {
+    return false; // Auto-skip: Daily email limit reached or no SMTP providers available!
+  }
+
+  return true;
+}
 
 // In-memory persistent state sync to ensure 100% smooth execution
 const mockUsers: Map<string, User> = new Map();
@@ -243,6 +263,16 @@ async function sendOtpEmail(email: string, otpCode: string): Promise<{ success: 
     }
   }
 
+  // If daily email limit reached or SMTP failed, auto-skip email verification requirement so users are not blocked!
+  if (!systemSettings.requireEmailOtp || (systemSettings.brevoUsedToday >= systemSettings.brevoDailyLimit && systemSettings.resendUsedToday >= systemSettings.resendDailyLimit)) {
+    console.log(`[SMTP] Limit reached or SMTP disabled for ${email}. Auto-skipping email OTP verification.`);
+    return { 
+      success: true, 
+      providerUsed: 'Auto-Skip (Limit Reached)', 
+      message: 'দৈনিক ইমেইল লিমিট শেষ হওয়ায় ওটিপি ভেরিফিকেশন ছাড়াই সরাসরি রেজিস্ট্রেশন করতে পারবেন!' 
+    };
+  }
+
   // Developer Preview mode helper
   console.log(`[SMTP PREVIEW HELPER] OTP for ${email}: ${otpCode}`);
   return { 
@@ -252,28 +282,47 @@ async function sendOtpEmail(email: string, otpCode: string): Promise<{ success: 
   };
 }
 
-// Track failed ImgBB API keys so they are not used again in this session
-const failedImgbbKeys = new Set<string>();
+// Track failed ImgBB API keys with a 10-minute temporary cooldown (prevents permanent session lockouts from transient rate limits!)
+const failedImgbbKeys = new Map<string, number>();
+const IMGBB_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 
-// ImgBB Upload Proxy with Multi-Key Failover & Automatic Rotation
+// ImgBB Upload Proxy with Multi-Key Failover & Automatic Cooldown Recovery
 async function uploadToImgBB(base64Image: string): Promise<string> {
   await loadSystemSettingsFromSupabase();
   const rawKeys = `${process.env.IMGBB_API_KEY || ''},${systemSettings.imgbbApiKey || ''}`;
+  const now = Date.now();
   const allKeys = rawKeys
     .split(/[\s,]+/)
     .map(k => k.trim())
-    .filter(k => k.length > 5 && !failedImgbbKeys.has(k));
+    .filter(k => k.length > 5);
 
   if (allKeys.length === 0) {
-    console.warn('[ImgBB] No valid active API keys available (or all keys failed). Returning base64 fallback.');
+    console.warn('[ImgBB] No valid active API keys available. Returning base64 fallback.');
     return base64Image;
+  }
+
+  // Filter out keys that are currently in cooldown
+  let availableKeys = allKeys.filter(k => {
+    const failedAt = failedImgbbKeys.get(k);
+    if (!failedAt) return true;
+    if (now - failedAt > IMGBB_COOLDOWN_MS) {
+      failedImgbbKeys.delete(k); // Cooldown expired, restore key!
+      return true;
+    }
+    return false;
+  });
+
+  // If all keys are in cooldown, pick the oldest failed key as a fallback retry
+  if (availableKeys.length === 0) {
+    console.warn('[ImgBB] All API keys in cooldown! Attempting retry with oldest key...');
+    availableKeys = [...allKeys].sort((a, b) => (failedImgbbKeys.get(a) || 0) - (failedImgbbKeys.get(b) || 0));
   }
 
   const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
   const formData = new URLSearchParams();
   formData.append('image', cleanBase64);
 
-  for (const apiKey of allKeys) {
+  for (const apiKey of availableKeys) {
     try {
       const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
         method: 'POST',
@@ -282,15 +331,16 @@ async function uploadToImgBB(base64Image: string): Promise<string> {
 
       const data = await response.json();
       if (response.ok && data && data.data && data.data.url) {
-        console.log(`[ImgBB] Successfully uploaded image using key: ${apiKey.slice(0, 4)}...`);
+        console.log(`[ImgBB] Successfully uploaded image (~${Math.round(cleanBase64.length * 0.75 / 1024)} KB) using key: ${apiKey.slice(0, 4)}...`);
+        failedImgbbKeys.delete(apiKey); // On success, clear any previous error flag
         return data.data.url;
       } else {
-        console.warn(`[ImgBB] Upload failed with key ${apiKey.slice(0, 4)}... Status: ${response.status}. Marking key as failed.`);
-        failedImgbbKeys.add(apiKey);
+        console.warn(`[ImgBB] Upload failed with key ${apiKey.slice(0, 4)}... Status: ${response.status}. Putting on 10m cooldown.`);
+        failedImgbbKeys.set(apiKey, Date.now());
       }
     } catch (err) {
-      console.error(`[ImgBB] Error uploading with key ${apiKey.slice(0, 4)}... Marking key as failed:`, err);
-      failedImgbbKeys.add(apiKey);
+      console.error(`[ImgBB] Error uploading with key ${apiKey.slice(0, 4)}... Putting on cooldown:`, err);
+      failedImgbbKeys.set(apiKey, Date.now());
     }
   }
 
@@ -444,6 +494,7 @@ async function loadSystemSettingsFromSupabase(): Promise<void> {
       if (data.support_telegram_url !== undefined && data.support_telegram_url) systemSettings.supportTelegramUrl = data.support_telegram_url;
       if (data.channel_telegram_url !== undefined && data.channel_telegram_url) systemSettings.channelTelegramUrl = data.channel_telegram_url;
       if (data.popup_welcome_text !== undefined && data.popup_welcome_text) systemSettings.popupWelcomeText = data.popup_welcome_text;
+      if (data.require_email_otp !== undefined) systemSettings.requireEmailOtp = Boolean(data.require_email_otp);
       if (systemSettings.imgbbApiKey) {
         failedImgbbKeys.clear();
       }
@@ -471,6 +522,7 @@ async function saveSystemSettingsToSupabase(): Promise<void> {
       support_telegram_url: systemSettings.supportTelegramUrl || '',
       channel_telegram_url: systemSettings.channelTelegramUrl || '',
       popup_welcome_text: systemSettings.popupWelcomeText || '',
+      require_email_otp: systemSettings.requireEmailOtp !== false,
     };
     let { error } = await supabase.from('system_settings').upsert(fullPayload);
     if (error) {
@@ -734,6 +786,15 @@ app.post('/api/auth/send-otp', async (req, res) => {
     return res.status(400).json({ error: 'Only Gmail (@gmail.com) addresses are allowed!' });
   }
 
+  if (!isEmailVerificationRequired()) {
+    return res.json({
+      success: true,
+      skippedOtp: true,
+      message: 'ইমেইল লিমিট শেষ বা এডমিন সেটিংসের কারণে ওটিপি ভেরিফিকেশন ছাড়া সরাসরি রেজিস্ট্রেশন সক্রিয় আছে!',
+      provider: 'Auto-Skip (Limit / Admin Toggle)',
+    });
+  }
+
   const cleanEmail = email.toLowerCase().trim();
   const sessionKey = deviceId ? `${cleanEmail}_${deviceId}` : cleanEmail;
 
@@ -781,6 +842,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
   res.json({
     success: true,
+    skippedOtp: emailResult.providerUsed.includes('Auto-Skip'),
     message: emailResult.message,
     provider: emailResult.providerUsed,
   });
@@ -797,31 +859,35 @@ app.post('/api/auth/register', async (req, res) => {
   const cleanEmail = email.toLowerCase().trim();
   const cleanOtp = String(otp || '').trim();
 
-  // Validate OTP from memory or Supabase
-  let isValidOtp = false;
-  const otpEntry = mockOtps.get(cleanEmail);
-  if (otpEntry && String(otpEntry.code).trim() === cleanOtp && Date.now() <= otpEntry.expiresAt) {
-    isValidOtp = true;
-  } else {
-    try {
-      const { data: dbOtp } = await supabase
-        .from('otps')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
+  // Validate OTP from memory or Supabase (Skip if not required due to admin setting or email limit reached)
+  const requireOtpNow = isEmailVerificationRequired();
+  let isValidOtp = !requireOtpNow || cleanOtp === 'SKIPPED_BY_LIMIT' || cleanOtp === 'BYPASS_LIMIT' || (!requireOtpNow && cleanOtp === '');
 
-      if (dbOtp && String(dbOtp.code).trim() === cleanOtp) {
-        const expiresTime = new Date(dbOtp.expires_at).getTime();
-        if (Date.now() <= expiresTime) {
-          isValidOtp = true;
+  if (requireOtpNow && !isValidOtp) {
+    const otpEntry = mockOtps.get(cleanEmail);
+    if (otpEntry && String(otpEntry.code).trim() === cleanOtp && Date.now() <= otpEntry.expiresAt) {
+      isValidOtp = true;
+    } else {
+      try {
+        const { data: dbOtp } = await supabase
+          .from('otps')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (dbOtp && String(dbOtp.code).trim() === cleanOtp) {
+          const expiresTime = new Date(dbOtp.expires_at).getTime();
+          if (Date.now() <= expiresTime) {
+            isValidOtp = true;
+          }
         }
+      } catch (err) {
+        console.error('Supabase OTP check error:', err);
       }
-    } catch (err) {
-      console.error('Supabase OTP check error:', err);
     }
   }
 
-  if (!isValidOtp) {
+  if (requireOtpNow && !isValidOtp) {
     return res.status(400).json({ error: 'Invalid or expired OTP code!' });
   }
 
@@ -869,11 +935,11 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'এই জিমেইল (Gmail) দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে! নতুন করে রেজিস্টার না করে অনুগ্রহ করে লগইন করুন।' });
   }
 
-  // 1 Account Per Device Restriction Rule
-  if (deviceId && deviceId.trim() !== '') {
+  // 1 Account Per Device Restriction Rule (Strict Enforcement: checks both ID and Hardware Fingerprint)
+  if ((deviceId && deviceId.trim() !== '') || (deviceName && deviceName.trim() !== '')) {
     let deviceAlreadyUsed = false;
     for (const u of mockUsers.values()) {
-      if (u.deviceId === deviceId && u.email !== cleanEmail) {
+      if ((deviceId && u.deviceId === deviceId || (deviceName && u.deviceName && u.deviceName.toLowerCase() === deviceName.toLowerCase() && !deviceName.startsWith('Browser Device [0x0'))) && u.email !== cleanEmail) {
         deviceAlreadyUsed = true;
         break;
       }
@@ -881,14 +947,13 @@ app.post('/api/auth/register', async (req, res) => {
 
     if (!deviceAlreadyUsed) {
       try {
-        const { data: devUsers } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('device_id', deviceId);
-        if (devUsers && devUsers.length > 0) {
-          if (devUsers.some((u: any) => u.email !== cleanEmail)) {
-            deviceAlreadyUsed = true;
-          }
+        const query = supabase.from('users').select('id, email');
+        if (deviceId && deviceName) {
+          const { data: devUsers } = await query.or(`device_id.eq.${deviceId},device_name.ilike.${deviceName}`);
+          if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) deviceAlreadyUsed = true;
+        } else if (deviceId) {
+          const { data: devUsers } = await query.eq('device_id', deviceId);
+          if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) deviceAlreadyUsed = true;
         }
       } catch (err) {
         console.error('Supabase check device_id error:', err);
@@ -1688,13 +1753,15 @@ app.get('/api/settings/public', async (req, res) => {
       supportTelegramUrl: systemSettings.supportTelegramUrl || 'https://t.me/xnhelpline',
       channelTelegramUrl: systemSettings.channelTelegramUrl || 'https://t.me/xnrewared',
       popupWelcomeText: systemSettings.popupWelcomeText || 'ভিডিও দেখুন! (Tutorial)',
+      requireEmailOtp: isEmailVerificationRequired(),
+      adminToggleRequireOtp: systemSettings.requireEmailOtp !== false,
     }
   });
 });
 
 app.get('/api/admin/settings', async (req, res) => {
   await loadSystemSettingsFromSupabase();
-  res.json({ success: true, settings: systemSettings });
+  res.json({ success: true, settings: { ...systemSettings, requireEmailOtp: systemSettings.requireEmailOtp !== false, isOtpRequiredNow: isEmailVerificationRequired() } });
 });
 
 app.get('/api/admin/otp-stats', async (req, res) => {
@@ -1728,7 +1795,7 @@ app.get('/api/admin/otp-stats', async (req, res) => {
 app.post('/api/admin/settings', async (req, res) => {
   const {
     imgbbApiKey, brevoApiKey, resendApiKey, brevoDailyLimit, resendDailyLimit,
-    tutorialFbVideoUrl, supportTelegramUrl, channelTelegramUrl, popupWelcomeText
+    tutorialFbVideoUrl, supportTelegramUrl, channelTelegramUrl, popupWelcomeText, requireEmailOtp
   } = req.body;
   if (imgbbApiKey !== undefined) {
     systemSettings.imgbbApiKey = String(imgbbApiKey).trim().replace(/^["']|["']$/g, '');
@@ -1742,6 +1809,7 @@ app.post('/api/admin/settings', async (req, res) => {
   if (supportTelegramUrl !== undefined) systemSettings.supportTelegramUrl = supportTelegramUrl;
   if (channelTelegramUrl !== undefined) systemSettings.channelTelegramUrl = channelTelegramUrl;
   if (popupWelcomeText !== undefined) systemSettings.popupWelcomeText = popupWelcomeText;
+  if (requireEmailOtp !== undefined) systemSettings.requireEmailOtp = Boolean(requireEmailOtp);
 
   await saveSystemSettingsToSupabase();
 

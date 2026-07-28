@@ -80,6 +80,7 @@ export interface SystemSettings {
   supportTelegramUrl?: string;
   channelTelegramUrl?: string;
   popupWelcomeText?: string;
+  requireEmailOtp?: boolean;
 }
 
 export interface TapResponse {

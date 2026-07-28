@@ -81,7 +81,12 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
   resend_used_today INT DEFAULT 0,
   recharge_interval_hours INT DEFAULT 6,
   default_hit_damage NUMERIC(10, 2) DEFAULT 0.50,
-  admin_email VARCHAR(150) DEFAULT 'admin@gmail.com'
+  admin_email VARCHAR(150) DEFAULT 'admin@gmail.com',
+  tutorial_fb_video_url TEXT DEFAULT '',
+  support_telegram_url TEXT DEFAULT '',
+  channel_telegram_url TEXT DEFAULT '',
+  popup_welcome_text TEXT DEFAULT '',
+  require_email_otp BOOLEAN DEFAULT TRUE
 );
 
 -- 7. Create OTP Codes Table

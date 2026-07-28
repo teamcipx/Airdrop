@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Task, TaskSubmission } from '../types';
-import { fetchTasksApi, fetchMySubmissionsApi, submitTaskProofApi } from '../lib/api';
-import { CheckCircle, Clock, Upload, ExternalLink, Flag, Image as ImageIcon, ShieldCheck, X } from 'lucide-react';
+import { fetchTasksApi, fetchMySubmissionsApi, submitTaskProofApi, compressImage } from '../lib/api';
+import { CheckCircle, Clock, Upload, ExternalLink, Flag, Image as ImageIcon, ShieldCheck, X, HelpCircle, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface TaskListProps {
   user: User | null;
@@ -32,6 +32,8 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
   const [proofImageBase64, setProofImageBase64] = useState<string>('');
   const [linkOpened, setLinkOpened] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [compressing, setCompressing] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,14 +68,21 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
     }
   };
 
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProofImageBase64(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        setCompressing(true);
+        const compressed = await compressImage(file, 800, 800, 0.65);
+        setProofImageBase64(compressed);
+      } catch (err) {
+        console.error('Image compression failed, fallback to raw reader:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => setProofImageBase64(reader.result as string);
+        reader.readAsDataURL(file);
+      } finally {
+        setCompressing(false);
+      }
     }
   };
 
@@ -133,28 +142,85 @@ export const TaskList: React.FC<TaskListProps> = ({ user, onUpdateUser, onOpenAu
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-24 text-amber-50">
       {/* Top Banner - Luxury Golden Card */}
-      <div className="bg-gradient-to-br from-[#382015] via-[#26150e] to-[#150a06] p-5 rounded-3xl border-t border-t-amber-400/60 border-x border-x-amber-500/30 border-b border-b-black/80 shadow-[0_15px_30px_rgba(0,0,0,0.8),0_0_20px_rgba(245,158,11,0.15)] flex items-center justify-between relative overflow-hidden">
+      <div className="bg-gradient-to-br from-[#382015] via-[#26150e] to-[#150a06] p-5 rounded-3xl border-t border-t-amber-400/60 border-x border-x-amber-500/30 border-b border-b-black/80 shadow-[0_15px_30px_rgba(0,0,0,0.8),0_0_20px_rgba(245,158,11,0.15)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-        <div>
-          <h2 className="text-xl font-black text-amber-100 flex items-center gap-2">
-            <div className="p-1 rounded-lg bg-amber-500/20 border border-amber-400/40">
-              <Flag className="w-5 h-5 text-amber-400 animate-pulse" />
-            </div>
-            <span className="tracking-wide">INCREASE YOUR RATING</span>
-          </h2>
-          <p className="text-xs text-amber-200/80 mt-1.5 leading-relaxed">
-            টাস্ক পূরণ করুন, স্ক্রিনশট প্রুফ দিন এবং নগদ টাকা (<strong className="text-emerald-400 font-mono">Taka BDT</strong>) রিওয়ার্ড পান!
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="relative shrink-0">
+            <div className="absolute inset-0 bg-amber-400 rounded-full blur-md opacity-40 animate-pulse" />
+            <img
+              src="/src/assets/images/nxb_golden_coin_1784869821261.jpg"
+              alt="Coins"
+              className="relative w-14 h-14 rounded-2xl shadow-2xl border-2 border-amber-300/80 object-cover"
+            />
+          </div>
+          <div>
+            <h2 className="text-xl font-black text-amber-100 flex items-center gap-2">
+              <span className="tracking-wide">INCREASE YOUR RATING</span>
+            </h2>
+            <p className="text-xs text-amber-200/80 mt-1 leading-relaxed">
+              টাস্ক পূরণ করুন, স্ক্রিনশট প্রুফ দিন এবং নগদ টাকা (<strong className="text-emerald-400 font-mono">Taka BDT</strong>) রিওয়ার্ড পান!
+            </p>
+          </div>
         </div>
-        <div className="relative shrink-0">
-          <div className="absolute inset-0 bg-amber-400 rounded-full blur-md opacity-40 animate-pulse" />
-          <img
-            src="/src/assets/images/nxb_golden_coin_1784869821261.jpg"
-            alt="Coins"
-            className="relative w-14 h-14 rounded-2xl shadow-2xl border-2 border-amber-300/80 object-cover"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowGuideModal(true)}
+          className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 hover:scale-105 transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+        >
+          <HelpCircle className="w-4 h-4 text-black animate-bounce" />
+          <span>কীভাবে কাজ করবেন? (নিয়ম)</span>
+        </button>
       </div>
+
+      {/* Interactive Guide Modal */}
+      {showGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#1b0f0b] border-2 border-amber-500/60 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-amber-100 relative">
+            <button
+              onClick={() => setShowGuideModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-amber-300 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 text-amber-400 font-black text-lg pb-2 border-b border-amber-500/20">
+              <Sparkles className="w-5 h-5 animate-spin" />
+              <span>সহজে টাকা ইনকামের ৩টি নিয়ম!</span>
+            </div>
+            <div className="space-y-3 text-xs leading-relaxed text-amber-200/90">
+              <div className="bg-black/40 p-3 rounded-2xl border border-amber-500/30 flex items-start gap-2.5">
+                <span className="w-6 h-6 rounded-full bg-amber-500 text-black font-black flex items-center justify-center shrink-0 mt-0.5">১</span>
+                <div>
+                  <strong className="text-amber-300 block mb-0.5">টাস্ক সিলেক্ট করুন:</strong>
+                  তালিকা থেকে আপনার পছন্দের টাস্ক (যেমন: YouTube Subscribe, Telegram Join) বেছে নিয়ে <strong className="text-white">'টাস্ক করুন'</strong> বাটনে ক্লিক করুন।
+                </div>
+              </div>
+              <div className="bg-black/40 p-3 rounded-2xl border border-amber-500/30 flex items-start gap-2.5">
+                <span className="w-6 h-6 rounded-full bg-amber-500 text-black font-black flex items-center justify-center shrink-0 mt-0.5">২</span>
+                <div>
+                  <strong className="text-amber-300 block mb-0.5">লিংকে যান ও কাজ করুন:</strong>
+                  বিবরণ পড়ে <strong className="text-cyan-400">'🔗 টাস্ক লিংকে যান'</strong> বাটনে ক্লিক করে নির্দিষ্ট সাইটে গিয়ে কাজ সম্পন্ন করুন এবং একটি স্ক্রিনশট (Screenshot) নিন।
+                </div>
+              </div>
+              <div className="bg-black/40 p-3 rounded-2xl border border-amber-500/30 flex items-start gap-2.5">
+                <span className="w-6 h-6 rounded-full bg-amber-500 text-black font-black flex items-center justify-center shrink-0 mt-0.5">৩</span>
+                <div>
+                  <strong className="text-amber-300 block mb-0.5">স্ক্রিনশট প্রুফ জমা দিন:</strong>
+                  <strong className="text-emerald-400">ধাপ ৩</strong> থেকে স্ক্রিনশটটি আপলোড করে <strong className="text-white">'🚀 টাস্ক জমা দিন'</strong> বাটনে ক্লিক করুন। এডমিন চেক করে আপনার ব্যালেন্সে টাকা যোগ করে দেবে!
+                </div>
+              </div>
+              <div className="bg-emerald-500/10 border border-emerald-500/40 p-3 rounded-2xl text-emerald-300 text-center font-bold text-[11px]">
+                ⚡ আমাদের সিস্টেমে ছবি আপলোড খুব ফাস্ট! স্ক্রিনশট অটো-কমপ্রেস হয়ে মাত্র কয়েক সেকেন্ডে জমা হয়ে যায়।
+              </div>
+            </div>
+            <button
+              onClick={() => setShowGuideModal(false)}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-extrabold shadow-lg hover:from-amber-400 hover:to-orange-400 transition-all cursor-pointer text-center"
+            >
+              বুঝেছি, এখন কাজ শুরু করব! 👍
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 bg-[#1b0f0b]/90 p-1.5 rounded-2xl border border-[#4a2b1d] shadow-inner">

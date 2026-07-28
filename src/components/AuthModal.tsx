@@ -57,10 +57,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, initia
     setLoading(false);
 
     if (res.success) {
-      const currentEmailCount = Number(sessionStorage.getItem(`otp_count_${cleanEmail}`) || '0') + 1;
-      const currentSessionCount = Number(sessionStorage.getItem('otp_session_total') || '0') + 1;
-      sessionStorage.setItem(`otp_count_${cleanEmail}`, String(currentEmailCount));
-      sessionStorage.setItem('otp_session_total', String(currentSessionCount));
+      if (res.skippedOtp) {
+        setOtpCode('SKIPPED_BY_LIMIT');
+      } else {
+        const currentEmailCount = Number(sessionStorage.getItem(`otp_count_${cleanEmail}`) || '0') + 1;
+        const currentSessionCount = Number(sessionStorage.getItem('otp_session_total') || '0') + 1;
+        sessionStorage.setItem(`otp_count_${cleanEmail}`, String(currentEmailCount));
+        sessionStorage.setItem('otp_session_total', String(currentSessionCount));
+      }
       setStep('otp');
     } else {
       setErrorMessage(res.error || 'Failed to send verification email.');
@@ -297,71 +301,80 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, initia
             </form>
           ) : (
             <form onSubmit={handleRegister} className="flex flex-col gap-3 text-xs">
-              <div className="text-center py-1">
-                <p className="text-xs text-amber-200">
-                  Enter 6-digit OTP code sent to <strong className="text-amber-400 font-mono">{email}</strong>
-                </p>
-                <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">
-                  <span>কোটা ব্যবহার: <strong>{sessionStorage.getItem(`otp_count_${email.toLowerCase().trim()}`) || '1'}/2 বার</strong></span>
+              {otpCode === 'SKIPPED_BY_LIMIT' ? (
+                <div className="bg-emerald-500/10 border-2 border-emerald-500/40 rounded-2xl p-4 text-center text-emerald-300 space-y-1.5 shadow-lg">
+                  <p className="font-extrabold text-sm">✅ ওটিপি ভেরিফিকেশন ছাড়া সরাসরি রেজিস্ট্রেশন সক্রিয় আছে!</p>
+                  <p className="text-[11px] text-emerald-400/80 leading-relaxed">দৈনিক লিমিট শেষ বা এডমিন সেটিংসের কারণে আপনার জিমেইলে ওটিপি পাঠানো ছাড়াই একাউন্ট খোলার সুযোগ দেওয়া হচ্ছে।</p>
                 </div>
-              </div>
-
-              {/* Special Mailbox & Support Notice */}
-              <div className="bg-gradient-to-br from-amber-950/70 via-[#23150e] to-orange-950/50 border border-amber-500/40 rounded-2xl p-3 space-y-2.5 shadow-lg">
-                <div className="flex items-start gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
-                    <Inbox className="w-4 h-4" />
-                  </div>
-                  <div className="space-y-1 text-left">
-                    <h4 className="text-xs font-black text-amber-200 flex items-center gap-1">
-                      <span>ইনবক্স ও স্প্যাম বক্স চেক করুন! 📩</span>
-                    </h4>
-                    <p className="text-[11px] text-amber-300/80 leading-relaxed">
-                      আপনার জিমেইলের <strong>Inbox</strong> চেক করুন। যদি ইনবক্সে কোড না পান, তবে অবশ্যই জিমেইলের <strong className="text-orange-400">Spam / Junk Box</strong> ফোল্ডারটি চেক করবেন!
+              ) : (
+                <>
+                  <div className="text-center py-1">
+                    <p className="text-xs text-amber-200">
+                      Enter 6-digit OTP code sent to <strong className="text-amber-400 font-mono">{email}</strong>
                     </p>
+                    <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">
+                      <span>কোটা ব্যবহার: <strong>{sessionStorage.getItem(`otp_count_${email.toLowerCase().trim()}`) || '1'}/2 বার</strong></span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="pt-2 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
-                  <a
-                    href="https://t.me/nxsupport"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-cyan-300 hover:text-cyan-200 font-bold transition-all bg-cyan-950/60 px-2.5 py-1.5 rounded-xl border border-cyan-500/40 shadow-sm"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>সাপোর্টে মেসেজ দিন</span>
-                  </a>
-                  <a
-                    href="https://t.me/nxchannel"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-emerald-300 hover:text-emerald-200 font-bold transition-all bg-emerald-950/60 px-2.5 py-1.5 rounded-xl border border-emerald-500/40 shadow-sm"
-                  >
-                    <Video className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>ভিডিও দেখুন</span>
-                  </a>
-                </div>
-              </div>
+                  {/* Special Mailbox & Support Notice */}
+                  <div className="bg-gradient-to-br from-amber-950/70 via-[#23150e] to-orange-950/50 border border-amber-500/40 rounded-2xl p-3 space-y-2.5 shadow-lg">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                        <Inbox className="w-4 h-4" />
+                      </div>
+                      <div className="space-y-1 text-left">
+                        <h4 className="text-xs font-black text-amber-200 flex items-center gap-1">
+                          <span>ইনবক্স ও স্প্যাম বক্স চেক করুন! 📩</span>
+                        </h4>
+                        <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                          আপনার জিমেইলের <strong>Inbox</strong> চেক করুন। যদি ইনবক্সে কোড না পান, তবে অবশ্যই জিমেইলের <strong className="text-orange-400">Spam / Junk Box</strong> ফোল্ডারটি চেক করবেন!
+                        </p>
+                      </div>
+                    </div>
 
-              <div>
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={e => setOtpCode(e.target.value)}
-                  placeholder="123456"
-                  className="w-full bg-[#180e0b] border-2 border-amber-500/60 rounded-2xl p-3 text-center text-amber-100 font-mono font-black text-2xl tracking-widest focus:outline-none"
-                />
-              </div>
+                    <div className="pt-2 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                      <a
+                        href="https://t.me/nxsupport"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-cyan-300 hover:text-cyan-200 font-bold transition-all bg-cyan-950/60 px-2.5 py-1.5 rounded-xl border border-cyan-500/40 shadow-sm"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>সাপোর্টে মেসেজ দিন</span>
+                      </a>
+                      <a
+                        href="https://t.me/nxchannel"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-emerald-300 hover:text-emerald-200 font-bold transition-all bg-emerald-950/60 px-2.5 py-1.5 rounded-xl border border-emerald-500/40 shadow-sm"
+                      >
+                        <Video className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>ভিডিও দেখুন</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={e => setOtpCode(e.target.value)}
+                      placeholder="123456"
+                      className="w-full bg-[#180e0b] border-2 border-amber-500/60 rounded-2xl p-3 text-center text-amber-100 font-mono font-black text-2xl tracking-widest focus:outline-none"
+                    />
+                  </div>
+                </>
+              )}
 
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-black font-extrabold py-3 rounded-2xl shadow-lg mt-2 hover:from-amber-400 hover:to-orange-400 transition-all cursor-pointer disabled:opacity-50"
               >
-                {loading ? 'Verifying & Creating Account...' : 'Verify OTP & Complete Signup'}
+                {loading ? 'Creating Account...' : (otpCode === 'SKIPPED_BY_LIMIT' ? 'Complete Signup Now 🚀' : 'Verify OTP & Complete Signup')}
               </button>
 
               <div className="flex items-center justify-between mt-1 pt-2 border-t border-[#3e281e]">
