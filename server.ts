@@ -282,69 +282,154 @@ async function sendOtpEmail(email: string, otpCode: string): Promise<{ success: 
   };
 }
 
-// Track failed ImgBB API keys with a 10-minute temporary cooldown (prevents permanent session lockouts from transient rate limits!)
-const failedImgbbKeys = new Map<string, number>();
-const IMGBB_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+// Structured ImgBB API Key Management Store
+export interface ImgbbKeyItem {
+  id: string;
+  key: string;
+  status: 'active' | 'failed';
+  failReason?: string;
+  lastTested?: string;
+  createdAt?: string;
+}
 
-// ImgBB Upload Proxy with Multi-Key Failover & Automatic Cooldown Recovery
-async function uploadToImgBB(base64Image: string): Promise<string> {
-  await loadSystemSettingsFromSupabase();
-  const rawKeys = `${process.env.IMGBB_API_KEY || ''},${systemSettings.imgbbApiKey || ''}`;
-  const now = Date.now();
-  const allKeys = rawKeys
-    .split(/[\s,]+/)
-    .map(k => k.trim())
-    .filter(k => k.length > 5);
+let imgbbKeysStore: ImgbbKeyItem[] = [];
 
-  if (allKeys.length === 0) {
-    console.warn('[ImgBB] No valid active API keys available. Returning base64 fallback.');
-    return base64Image;
+// Helper: Sync ImgBB Keys to Supabase & systemSettings
+async function syncImgbbKeysToSupabase(): Promise<void> {
+  try {
+    const activeKeysStr = imgbbKeysStore
+      .filter(k => k.status === 'active')
+      .map(k => k.key)
+      .join(',');
+    systemSettings.imgbbApiKey = activeKeysStr;
+
+    await saveSystemSettingsToSupabase();
+
+    for (const item of imgbbKeysStore) {
+      await supabase.from('imgbb_keys').upsert({
+        id: item.id,
+        api_key: item.key,
+        status: item.status,
+        fail_reason: item.failReason || '',
+        last_tested: item.lastTested || new Date().toISOString(),
+      }, { onConflict: 'id' });
+    }
+  } catch (err) {
+    console.warn('[ImgBB Sync] Sync warning:', err);
+  }
+}
+
+// Helper: Load ImgBB keys from Supabase or parse from systemSettings
+async function loadImgbbKeysFromSupabase(): Promise<void> {
+  try {
+    const { data, error } = await supabase.from('imgbb_keys').select('*').order('created_at', { ascending: true });
+    if (!error && data && data.length > 0) {
+      imgbbKeysStore = data.map((d: any, idx: number) => ({
+        id: d.id || `key_${idx + 1}_${Date.now()}`,
+        key: d.api_key,
+        status: (d.status === 'failed' ? 'failed' : 'active') as 'active' | 'failed',
+        failReason: d.fail_reason || '',
+        lastTested: d.last_tested || d.created_at,
+        createdAt: d.created_at || new Date().toISOString()
+      }));
+      return;
+    }
+  } catch (err) {
+    console.warn('[ImgBB Load] Could not load from imgbb_keys table, parsing systemSettings string.');
   }
 
-  // Filter out keys that are currently in cooldown
-  let availableKeys = allKeys.filter(k => {
-    const failedAt = failedImgbbKeys.get(k);
-    if (!failedAt) return true;
-    if (now - failedAt > IMGBB_COOLDOWN_MS) {
-      failedImgbbKeys.delete(k); // Cooldown expired, restore key!
-      return true;
-    }
-    return false;
-  });
+  if (imgbbKeysStore.length === 0) {
+    const rawKeys = `${process.env.IMGBB_API_KEY || ''},${systemSettings.imgbbApiKey || ''}`;
+    const uniqueKeys = Array.from(new Set(rawKeys.split(/[\s,]+/).map(k => k.trim()).filter(k => k.length > 5)));
+    imgbbKeysStore = uniqueKeys.map((k, idx) => ({
+      id: `key_${idx + 1}_${k.slice(0, 6)}`,
+      key: k,
+      status: 'active',
+      createdAt: new Date().toISOString()
+    }));
+  }
+}
 
-  // If all keys are in cooldown, pick the oldest failed key as a fallback retry
-  if (availableKeys.length === 0) {
-    console.warn('[ImgBB] All API keys in cooldown! Attempting retry with oldest key...');
-    availableKeys = [...allKeys].sort((a, b) => (failedImgbbKeys.get(a) || 0) - (failedImgbbKeys.get(b) || 0));
+// Test a single key live against ImgBB API
+async function testSingleImgbbKey(keyItem: ImgbbKeyItem): Promise<{ success: boolean; reason?: string }> {
+  const tinyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const formData = new URLSearchParams();
+  formData.append('image', tinyPngBase64);
+
+  try {
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${keyItem.key}`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await response.json();
+    if (response.ok && data && data.data && data.data.url) {
+      keyItem.status = 'active';
+      keyItem.failReason = '';
+      keyItem.lastTested = new Date().toISOString();
+      return { success: true };
+    } else {
+      keyItem.status = 'failed';
+      keyItem.failReason = data?.error?.message || `HTTP ${response.status}: Key rejected or limit reached`;
+      keyItem.lastTested = new Date().toISOString();
+      return { success: false, reason: keyItem.failReason };
+    }
+  } catch (err: any) {
+    keyItem.status = 'failed';
+    keyItem.failReason = err?.message || 'Network error';
+    keyItem.lastTested = new Date().toISOString();
+    return { success: false, reason: keyItem.failReason };
+  }
+}
+
+// ImgBB Upload Proxy - ONLY uses ACTIVE keys from the table
+async function uploadToImgBB(base64Image: string): Promise<string> {
+  await loadSystemSettingsFromSupabase();
+  if (imgbbKeysStore.length === 0) {
+    await loadImgbbKeysFromSupabase();
+  }
+
+  // Filter ONLY active keys
+  const activeKeys = imgbbKeysStore.filter(k => k.status === 'active');
+
+  if (activeKeys.length === 0) {
+    console.warn('[ImgBB] No ACTIVE API keys available! All keys are marked as FAILED. Returning base64 fallback.');
+    return base64Image;
   }
 
   const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
   const formData = new URLSearchParams();
   formData.append('image', cleanBase64);
 
-  for (const apiKey of availableKeys) {
+  for (const keyItem of activeKeys) {
     try {
-      const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+      const response = await fetch(`https://api.imgbb.com/1/upload?key=${keyItem.key}`, {
         method: 'POST',
         body: formData,
       });
 
       const data = await response.json();
       if (response.ok && data && data.data && data.data.url) {
-        console.log(`[ImgBB] Successfully uploaded image (~${Math.round(cleanBase64.length * 0.75 / 1024)} KB) using key: ${apiKey.slice(0, 4)}...`);
-        failedImgbbKeys.delete(apiKey); // On success, clear any previous error flag
+        console.log(`[ImgBB] Successfully uploaded image (~${Math.round(cleanBase64.length * 0.75 / 1024)} KB) using active key: ${keyItem.key.slice(0, 6)}...`);
+        keyItem.lastTested = new Date().toISOString();
         return data.data.url;
       } else {
-        console.warn(`[ImgBB] Upload failed with key ${apiKey.slice(0, 4)}... Status: ${response.status}. Putting on 10m cooldown.`);
-        failedImgbbKeys.set(apiKey, Date.now());
+        const errorMsg = data?.error?.message || `HTTP ${response.status}: API limit or invalid key`;
+        console.warn(`[ImgBB] Key ${keyItem.key.slice(0, 6)}... FAILED. Marking status as FAILED in table.`);
+        keyItem.status = 'failed';
+        keyItem.failReason = errorMsg;
+        keyItem.lastTested = new Date().toISOString();
+        await syncImgbbKeysToSupabase();
       }
-    } catch (err) {
-      console.error(`[ImgBB] Error uploading with key ${apiKey.slice(0, 4)}... Putting on cooldown:`, err);
-      failedImgbbKeys.set(apiKey, Date.now());
+    } catch (err: any) {
+      console.error(`[ImgBB] Error uploading with key ${keyItem.key.slice(0, 6)}... Marking key as FAILED:`, err);
+      keyItem.status = 'failed';
+      keyItem.failReason = err?.message || 'Network exception';
+      keyItem.lastTested = new Date().toISOString();
+      await syncImgbbKeysToSupabase();
     }
   }
 
-  console.warn('[ImgBB] All available ImgBB API keys failed during this upload attempt.');
+  console.warn('[ImgBB] All active keys failed during this upload. Returning base64 fallback.');
   return base64Image;
 }
 
@@ -495,9 +580,6 @@ async function loadSystemSettingsFromSupabase(): Promise<void> {
       if (data.channel_telegram_url !== undefined && data.channel_telegram_url) systemSettings.channelTelegramUrl = data.channel_telegram_url;
       if (data.popup_welcome_text !== undefined && data.popup_welcome_text) systemSettings.popupWelcomeText = data.popup_welcome_text;
       if (data.require_email_otp !== undefined) systemSettings.requireEmailOtp = Boolean(data.require_email_otp);
-      if (systemSettings.imgbbApiKey) {
-        failedImgbbKeys.clear();
-      }
     }
   } catch (err) {
     console.error('Supabase load system settings error:', err);
@@ -1799,7 +1881,6 @@ app.post('/api/admin/settings', async (req, res) => {
   } = req.body;
   if (imgbbApiKey !== undefined) {
     systemSettings.imgbbApiKey = String(imgbbApiKey).trim().replace(/^["']|["']$/g, '');
-    failedImgbbKeys.clear(); // Clear failed keys on admin update so corrected keys can be re-tested
   }
   if (brevoApiKey !== undefined) systemSettings.brevoApiKey = String(brevoApiKey).trim().replace(/^["']|["']$/g, '');
   if (resendApiKey !== undefined) systemSettings.resendApiKey = String(resendApiKey).trim().replace(/^["']|["']$/g, '');
@@ -1814,6 +1895,101 @@ app.post('/api/admin/settings', async (req, res) => {
   await saveSystemSettingsToSupabase();
 
   res.json({ success: true, settings: systemSettings, message: 'Settings updated successfully!' });
+});
+
+// ImgBB API Key Management Endpoints
+app.get('/api/admin/imgbb-keys', async (req, res) => {
+  if (imgbbKeysStore.length === 0) {
+    await loadImgbbKeysFromSupabase();
+  }
+  res.json({
+    success: true,
+    keys: imgbbKeysStore,
+    activeCount: imgbbKeysStore.filter(k => k.status === 'active').length,
+    failedCount: imgbbKeysStore.filter(k => k.status === 'failed').length,
+  });
+});
+
+app.post('/api/admin/imgbb-keys/add', async (req, res) => {
+  const { keysInput } = req.body;
+  if (!keysInput || typeof keysInput !== 'string') {
+    return res.status(400).json({ error: 'Key input string is required' });
+  }
+
+  const rawList = keysInput.split(/[\s,]+/).map(k => k.trim()).filter(k => k.length > 5);
+  let addedCount = 0;
+
+  for (const rawKey of rawList) {
+    const exists = imgbbKeysStore.some(k => k.key === rawKey);
+    if (!exists) {
+      const newItem: ImgbbKeyItem = {
+        id: `key_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        key: rawKey,
+        status: 'active',
+        createdAt: new Date().toISOString()
+      };
+      imgbbKeysStore.push(newItem);
+      addedCount++;
+    }
+  }
+
+  await syncImgbbKeysToSupabase();
+  res.json({
+    success: true,
+    message: `${addedCount} new key(s) added successfully!`,
+    keys: imgbbKeysStore
+  });
+});
+
+app.post('/api/admin/imgbb-keys/toggle-status', async (req, res) => {
+  const { id, status } = req.body;
+  const target = imgbbKeysStore.find(k => k.id === id);
+  if (!target) {
+    return res.status(404).json({ error: 'Key not found' });
+  }
+
+  target.status = status === 'active' ? 'active' : 'failed';
+  if (target.status === 'active') {
+    target.failReason = '';
+  }
+  target.lastTested = new Date().toISOString();
+
+  await syncImgbbKeysToSupabase();
+  res.json({ success: true, keys: imgbbKeysStore });
+});
+
+app.post('/api/admin/imgbb-keys/delete', async (req, res) => {
+  const { id } = req.body;
+  imgbbKeysStore = imgbbKeysStore.filter(k => k.id !== id);
+
+  try {
+    await supabase.from('imgbb_keys').delete().eq('id', id);
+  } catch (e) {
+    console.warn('Supabase key delete warning:', e);
+  }
+
+  await syncImgbbKeysToSupabase();
+  res.json({ success: true, keys: imgbbKeysStore });
+});
+
+app.post('/api/admin/imgbb-keys/test-all', async (req, res) => {
+  let passed = 0;
+  let failed = 0;
+
+  for (const keyItem of imgbbKeysStore) {
+    const result = await testSingleImgbbKey(keyItem);
+    if (result.success) passed++;
+    else failed++;
+  }
+
+  await syncImgbbKeysToSupabase();
+  res.json({
+    success: true,
+    passed,
+    failed,
+    keys: imgbbKeysStore,
+    message: `Test completed! Active: ${passed}, Failed: ${failed}`
+  });
 });
 
 // 14. Admin: Submissions review
@@ -1845,6 +2021,17 @@ app.get('/api/admin/submissions', async (req, res) => {
     }
   } catch (err) {
     console.error('Supabase fetch admin submissions error:', err);
+  }
+
+  // Auto-enrich user_name and user_email if missing
+  for (const sub of mockSubmissions) {
+    if (!sub.userName || !sub.userEmail) {
+      const u = mockUsers.get(sub.userId) || await getUserById(sub.userId);
+      if (u) {
+        if (!sub.userName) sub.userName = u.name;
+        if (!sub.userEmail) sub.userEmail = u.email;
+      }
+    }
   }
 
   const allSubmissions = [...mockSubmissions].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
@@ -1924,6 +2111,85 @@ app.post('/api/admin/submissions/review', async (req, res) => {
   await saveSubmissionToSupabase(sub);
 
   res.json({ success: true, submission: sub });
+});
+
+app.post('/api/admin/submissions/bulk-review', async (req, res) => {
+  const { submissionIds, status, rejectionReason } = req.body;
+  if (!Array.isArray(submissionIds) || submissionIds.length === 0) {
+    return res.status(400).json({ error: 'No submission IDs provided' });
+  }
+
+  let processedCount = 0;
+  for (const submissionId of submissionIds) {
+    let sub = mockSubmissions.find(s => s.id === submissionId);
+    if (!sub) {
+      try {
+        const { data: dbSub } = await supabase.from('task_submissions').select('*').eq('id', submissionId).maybeSingle();
+        if (dbSub) {
+          sub = {
+            id: dbSub.id,
+            taskId: dbSub.task_id,
+            userId: dbSub.user_id,
+            userName: dbSub.user_name || '',
+            userEmail: dbSub.user_email || '',
+            proofImageUrl: dbSub.proof_image_url || dbSub.proof_image || '',
+            status: dbSub.status || 'pending',
+            rejectionReason: dbSub.rejection_reason || dbSub.admin_comment || undefined,
+            submittedAt: dbSub.submitted_at || new Date().toISOString(),
+            reviewedAt: dbSub.reviewed_at || undefined,
+          };
+          mockSubmissions.push(sub);
+        }
+      } catch (err) {
+        console.error('Supabase fetch sub error in bulk:', err);
+      }
+    }
+
+    if (!sub) continue;
+
+    const previousStatus = sub.status;
+    sub.status = status;
+    sub.reviewedAt = new Date().toISOString();
+    if (rejectionReason) sub.rejectionReason = rejectionReason;
+
+    if (status === 'approved' && previousStatus !== 'approved') {
+      const user = await getUserById(sub.userId) || mockUsers.get(sub.userId);
+      let task = mockTasks.find(t => t.id === sub.taskId);
+      if (!task) {
+        try {
+          const { data: dbTask } = await supabase.from('tasks').select('*').eq('id', sub.taskId).maybeSingle();
+          if (dbTask) {
+            task = {
+              id: dbTask.id,
+              title: dbTask.title,
+              description: dbTask.description || '',
+              reward: Number(dbTask.reward) || 0,
+              type: dbTask.type || 'one_time',
+              category: dbTask.category || 'social',
+              actionUrl: dbTask.action_url || '',
+              requiresProof: Boolean(dbTask.requires_proof),
+              createdAt: dbTask.created_at || new Date().toISOString(),
+            };
+            mockTasks.push(task);
+          }
+        } catch (e) {}
+      }
+
+      if (user && task) {
+        user.takaBalance = (Number(user.takaBalance) || 0) + (Number(task.reward) || 0);
+        await saveUserToSupabase(user);
+      }
+    }
+
+    await saveSubmissionToSupabase(sub);
+    processedCount++;
+  }
+
+  res.json({
+    success: true,
+    processedCount,
+    message: `Successfully ${status === 'approved' ? 'approved' : 'rejected'} ${processedCount} submission(s)!`
+  });
 });
 
 // 15. Admin: Create Task

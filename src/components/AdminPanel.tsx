@@ -5,11 +5,12 @@ import {
   updateAdminSettingsApi,
   fetchAdminSubmissionsApi,
   reviewSubmissionApi,
+  bulkReviewSubmissionsApi,
   createAdminTaskApi,
   fetchWithdrawalsApi,
   reviewWithdrawalApi,
 } from '../lib/api';
-import { ShieldCheck, Key, Mail, CheckCircle, XCircle, Plus, Sparkles, X, Image as ImageIcon, Wallet, Database, Copy, Check } from 'lucide-react';
+import { ShieldCheck, Key, Mail, CheckCircle, XCircle, Plus, Sparkles, X, Image as ImageIcon, Wallet, Database, Copy, Check, CheckSquare, User, ExternalLink } from 'lucide-react';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -18,6 +19,8 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>([]);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'settings' | 'submissions' | 'withdrawals' | 'add_task' | 'sql_schema'>('withdrawals');
 
@@ -102,8 +105,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     const res = await reviewSubmissionApi(id, status);
     if (res.success) {
       setMessage(`Submission marked as ${status}`);
+      setSelectedSubmissionIds(prev => prev.filter(item => item !== id));
       loadSubmissions();
       setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleToggleSelectSubmission = (id: string) => {
+    setSelectedSubmissionIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllPendingSubmissions = () => {
+    const pendingIds = submissions.filter(s => s.status === 'pending').map(s => s.id);
+    if (selectedSubmissionIds.length === pendingIds.length && pendingIds.length > 0) {
+      setSelectedSubmissionIds([]);
+    } else {
+      setSelectedSubmissionIds(pendingIds);
+    }
+  };
+
+  const handleBulkReviewSubmissions = async (status: 'approved' | 'rejected') => {
+    if (selectedSubmissionIds.length === 0) {
+      setMessage('At least 1 submission must be selected!');
+      return;
+    }
+    if (!confirm(`Are you sure you want to bulk ${status} ${selectedSubmissionIds.length} submission(s)?`)) {
+      return;
+    }
+    setBulkProcessing(true);
+    const res = await bulkReviewSubmissionsApi(selectedSubmissionIds, status);
+    setBulkProcessing(false);
+    if (res.success) {
+      setMessage(res.message || `Submissions ${status} successfully!`);
+      setSelectedSubmissionIds([]);
+      loadSubmissions();
+      setTimeout(() => setMessage(null), 3000);
+    } else {
+      setMessage(`Bulk review failed: ${res.error}`);
     }
   };
 
@@ -331,45 +371,112 @@ CREATE TABLE IF NOT EXISTS public.referrals (
         {/* Tab 1: Proof Submissions */}
         {activeTab === 'submissions' && (
           <div className="flex flex-col gap-3 my-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
-              Pending Task Proof Submissions
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#3e2920]">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-amber-400" />
+                <span>Pending Task Proof Submissions ({submissions.filter(s => s.status === 'pending').length})</span>
+              </h3>
+
+              {submissions.filter(s => s.status === 'pending').length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllPendingSubmissions}
+                    className="px-2.5 py-1 bg-[#120a07] text-amber-300 border border-[#3e2920] rounded-lg text-[11px] font-bold cursor-pointer"
+                  >
+                    Select All ({submissions.filter(s => s.status === 'pending').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkReviewSubmissions('approved')}
+                    disabled={selectedSubmissionIds.length === 0 || bulkProcessing}
+                    className="px-3 py-1 bg-emerald-500 text-black font-black text-[11px] rounded-lg disabled:opacity-40 cursor-pointer flex items-center gap-1"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Bulk Approve ({selectedSubmissionIds.length})</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {submissions.filter(s => s.status === 'pending').length === 0 ? (
               <p className="text-xs text-amber-300/50 py-4 text-center">No pending task proofs to review.</p>
             ) : (
-              submissions.filter(s => s.status === 'pending').map(sub => (
-                <div key={sub.id} className="bg-[#1a0f0c] p-3 rounded-2xl border border-[#3e2920] flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-amber-100">{sub.userName} ({sub.userEmail})</span>
-                    <span className="text-[10px] text-amber-300/60">{new Date(sub.submittedAt).toLocaleTimeString()}</span>
-                  </div>
-
-                  {sub.proofImageUrl && (
-                    <div className="my-1 border border-[#483025] rounded-xl overflow-hidden bg-black/40 p-2">
-                      <img src={sub.proofImageUrl} alt="Proof" className="max-h-48 object-contain rounded-lg mx-auto" />
-                      <a href={sub.proofImageUrl} target="_blank" rel="noreferrer" className="text-[10px] text-amber-400 underline block mt-1 text-center">
-                        View Full Screenshot Image
-                      </a>
+              submissions.filter(s => s.status === 'pending').map(sub => {
+                const isSelected = selectedSubmissionIds.includes(sub.id);
+                return (
+                  <div
+                    key={sub.id}
+                    className={`p-3.5 rounded-2xl border flex flex-col gap-2.5 transition-all ${
+                      isSelected ? 'bg-[#24150f] border-amber-500' : 'bg-[#1a0f0c] border-[#3e2920]'
+                    }`}
+                  >
+                    {/* User profile row */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectSubmission(sub.id)}
+                          className="w-4 h-4 rounded text-amber-500 bg-[#0f0705] border-amber-500/50 cursor-pointer accent-amber-500"
+                        />
+                        <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-amber-100 text-xs flex items-center gap-2">
+                            <span>Username: <strong>{sub.userName || 'User'}</strong></span>
+                          </div>
+                          <div className="text-[11px] text-amber-300/80 font-mono flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-amber-400" />
+                            <span>Email: <strong>{sub.userEmail || 'No Email'}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right text-[10px] text-amber-300/60 font-mono">
+                        <div>User ID: {sub.userId}</div>
+                        <div>{new Date(sub.submittedAt).toLocaleTimeString()}</div>
+                      </div>
                     </div>
-                  )}
 
-                  <div className="flex items-center justify-end gap-2 mt-1">
-                    <button
-                      onClick={() => handleReviewSubmission(sub.id, 'rejected')}
-                      className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-rose-500/30 cursor-pointer"
-                    >
-                      <XCircle className="w-4 h-4" /> Reject
-                    </button>
-                    <button
-                      onClick={() => handleReviewSubmission(sub.id, 'approved')}
-                      className="bg-emerald-500 text-black px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-emerald-400 cursor-pointer"
-                    >
-                      <CheckCircle className="w-4 h-4" /> Approve & Credit
-                    </button>
+                    {/* Proof Section */}
+                    {sub.proofImageUrl && (
+                      <div className="border border-[#483025] rounded-xl overflow-hidden bg-black/40 p-2 space-y-1">
+                        <div className="flex justify-between items-center text-[10px] text-amber-300/70 font-mono">
+                          <span>Proof Screenshot:</span>
+                          <a
+                            href={sub.proofImageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-amber-400 underline flex items-center gap-0.5"
+                          >
+                            <span>Open Full Screenshot ↗</span>
+                          </a>
+                        </div>
+                        <img src={sub.proofImageUrl} alt="Proof" className="max-h-48 object-contain rounded-lg mx-auto" />
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 mt-1 pt-1 border-t border-[#2e1d15]">
+                      <span className="text-[10px] font-mono text-amber-300/40">Task ID: {sub.taskId}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleReviewSubmission(sub.id, 'rejected')}
+                          className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-rose-500/30 cursor-pointer"
+                        >
+                          <XCircle className="w-4 h-4" /> Reject
+                        </button>
+                        <button
+                          onClick={() => handleReviewSubmission(sub.id, 'approved')}
+                          className="bg-emerald-500 text-black px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-emerald-400 cursor-pointer"
+                        >
+                          <CheckCircle className="w-4 h-4" /> Approve & Credit
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

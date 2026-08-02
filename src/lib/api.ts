@@ -177,6 +177,45 @@ export async function fetchAdminSettingsApi() {
   return res.json();
 }
 
+export async function fetchImgbbKeysApi() {
+  const res = await fetch('/api/admin/imgbb-keys');
+  return res.json();
+}
+
+export async function addImgbbKeysApi(keysInput: string) {
+  const res = await fetch('/api/admin/imgbb-keys/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keysInput }),
+  });
+  return res.json();
+}
+
+export async function toggleImgbbKeyStatusApi(id: string, status: 'active' | 'failed') {
+  const res = await fetch('/api/admin/imgbb-keys/toggle-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status }),
+  });
+  return res.json();
+}
+
+export async function deleteImgbbKeyApi(id: string) {
+  const res = await fetch('/api/admin/imgbb-keys/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  return res.json();
+}
+
+export async function testAllImgbbKeysApi() {
+  const res = await fetch('/api/admin/imgbb-keys/test-all', {
+    method: 'POST',
+  });
+  return res.json();
+}
+
 export async function updateAdminSettingsApi(settings: Partial<SystemSettings>) {
   const res = await fetch('/api/admin/settings', {
     method: 'POST',
@@ -196,6 +235,15 @@ export async function reviewSubmissionApi(submissionId: string, status: 'approve
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ submissionId, status, rejectionReason }),
+  });
+  return res.json();
+}
+
+export async function bulkReviewSubmissionsApi(submissionIds: string[], status: 'approved' | 'rejected', rejectionReason?: string) {
+  const res = await fetch('/api/admin/submissions/bulk-review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ submissionIds, status, rejectionReason }),
   });
   return res.json();
 }

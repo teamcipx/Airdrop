@@ -65,8 +65,18 @@ export interface ReferralRecord {
   verifiedAt?: string;
 }
 
+export interface ImgbbKeyItem {
+  id: string;
+  key: string;
+  status: 'active' | 'failed';
+  failReason?: string;
+  lastTested?: string;
+  createdAt?: string;
+}
+
 export interface SystemSettings {
   imgbbApiKey: string;
+  imgbbKeysList?: ImgbbKeyItem[];
   brevoApiKey: string;
   brevoDailyLimit: number;
   brevoUsedToday: number;

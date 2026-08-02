@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { SystemSettings, TaskSubmission, WithdrawalRecord, User, Task } from '../types';
+import { SystemSettings, TaskSubmission, WithdrawalRecord, User, Task, ImgbbKeyItem } from '../types';
 import {
   fetchAdminSettingsApi,
   updateAdminSettingsApi,
   fetchAdminSubmissionsApi,
   reviewSubmissionApi,
+  bulkReviewSubmissionsApi,
   createAdminTaskApi,
   fetchWithdrawalsApi,
   reviewWithdrawalApi,
@@ -16,12 +17,19 @@ import {
   fetchTasksApi,
   updateAdminTaskApi,
   deleteAdminTaskApi,
+  fetchImgbbKeysApi,
+  addImgbbKeysApi,
+  toggleImgbbKeyStatusApi,
+  deleteImgbbKeyApi,
+  testAllImgbbKeysApi,
 } from '../lib/api';
-import { ShieldCheck, Key, Mail, CheckCircle, XCircle, Plus, Sparkles, Image as ImageIcon, Wallet, Lock, RefreshCw, Users, Search, Ban, Trash2, Coins, UserPlus, Edit3, CheckSquare } from 'lucide-react';
+import { ShieldCheck, Key, Mail, CheckCircle, XCircle, Plus, Sparkles, Image as ImageIcon, Wallet, Lock, RefreshCw, Users, Search, Ban, Trash2, Coins, UserPlus, Edit3, CheckSquare, User as UserIcon, ExternalLink } from 'lucide-react';
 
 export const AdminView: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>([]);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -31,6 +39,10 @@ export const AdminView: React.FC = () => {
 
   // Form states
   const [imgbbKey, setImgbbKey] = useState('');
+  const [imgbbKeysList, setImgbbKeysList] = useState<ImgbbKeyItem[]>([]);
+  const [newImgbbInput, setNewImgbbInput] = useState('');
+  const [testingKeys, setTestingKeys] = useState(false);
+  const [addingKeys, setAddingKeys] = useState(false);
   const [brevoKey, setBrevoKey] = useState('');
   const [resendKey, setResendKey] = useState('');
   const [fbVideoUrl, setFbVideoUrl] = useState('');
@@ -152,6 +164,57 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const loadImgbbKeys = async () => {
+    const res = await fetchImgbbKeysApi();
+    if (res.success && res.keys) {
+      setImgbbKeysList(res.keys);
+    }
+  };
+
+  const handleAddImgbbKeys = async () => {
+    if (!newImgbbInput.trim()) return;
+    setAddingKeys(true);
+    const res = await addImgbbKeysApi(newImgbbInput);
+    setAddingKeys(false);
+    if (res.success) {
+      setImgbbKeysList(res.keys || []);
+      setNewImgbbInput('');
+      setMessage(res.message || 'Key(s) added successfully!');
+    } else {
+      setMessage(`Error: ${res.error}`);
+    }
+  };
+
+  const handleToggleImgbbKey = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'active' ? 'failed' : 'active';
+    const res = await toggleImgbbKeyStatusApi(id, newStatus);
+    if (res.success) {
+      setImgbbKeysList(res.keys || []);
+      setMessage(`Key status changed to ${newStatus.toUpperCase()}`);
+    }
+  };
+
+  const handleDeleteImgbbKey = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this ImgBB API key?')) return;
+    const res = await deleteImgbbKeyApi(id);
+    if (res.success) {
+      setImgbbKeysList(res.keys || []);
+      setMessage('ImgBB Key deleted successfully!');
+    }
+  };
+
+  const handleTestAllImgbbKeys = async () => {
+    setTestingKeys(true);
+    const res = await testAllImgbbKeysApi();
+    setTestingKeys(false);
+    if (res.success) {
+      setImgbbKeysList(res.keys || []);
+      setMessage(res.message);
+    } else {
+      setMessage('Failed to test ImgBB keys.');
+    }
+  };
+
   const loadSettings = async () => {
     const res = await fetchAdminSettingsApi();
     if (res.success && res.settings) {
@@ -165,6 +228,7 @@ export const AdminView: React.FC = () => {
       setWelcomeText(res.settings.popupWelcomeText || 'ভিডিও দেখুন! (Tutorial)');
       setRequireEmailOtp(res.settings.requireEmailOtp !== false);
     }
+    loadImgbbKeys();
   };
 
   const loadSubmissions = async () => {
@@ -185,9 +249,47 @@ export const AdminView: React.FC = () => {
     const res = await reviewSubmissionApi(id, status);
     if (res.success) {
       setMessage(`Submission ${status} successfully!`);
+      setSelectedSubmissionIds(prev => prev.filter(item => item !== id));
       loadSubmissions();
     } else {
       setMessage(`Failed to review submission: ${res.error}`);
+    }
+  };
+
+  const handleToggleSelectSubmission = (id: string) => {
+    setSelectedSubmissionIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllPendingSubmissions = () => {
+    const pendingIds = submissions.filter(s => s.status === 'pending').map(s => s.id);
+    if (selectedSubmissionIds.length === pendingIds.length && pendingIds.length > 0) {
+      setSelectedSubmissionIds([]);
+    } else {
+      setSelectedSubmissionIds(pendingIds);
+    }
+  };
+
+  const handleBulkReviewSubmissions = async (status: 'approved' | 'rejected') => {
+    if (selectedSubmissionIds.length === 0) {
+      setMessage('অনুগ্রহ করে অন্তত ১টি সাবমিশন সিলেক্ট করুন!');
+      return;
+    }
+    const actionText = status === 'approved' ? 'অ্যাপ্রুভ (Approve)' : 'রিজেক্ট (Reject)';
+    if (!confirm(`আপনি কি নিশ্চিত যে সিলেক্ট করা ${selectedSubmissionIds.length}টি সাবমিশন ${actionText} করতে চান?`)) {
+      return;
+    }
+    setBulkProcessing(true);
+    const res = await bulkReviewSubmissionsApi(selectedSubmissionIds, status);
+    setBulkProcessing(false);
+    if (res.success) {
+      setMessage(res.message || `Selected submissions ${status} successfully!`);
+      setSelectedSubmissionIds([]);
+      loadSubmissions();
+      loadUsers();
+    } else {
+      setMessage(`Bulk review failed: ${res.error}`);
     }
   };
 
@@ -540,57 +642,198 @@ export const AdminView: React.FC = () => {
 
       {/* 2. Task Submissions Tab */}
       {activeTab === 'submissions' && (
-        <div className="bg-[#211410] p-4 rounded-3xl border border-[#442f26] shadow-xl space-y-3">
-          <h2 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
-            <ImageIcon className="w-4 h-4 text-amber-400" />
-            <span>Pending Task Proof Submissions ({pendingSubmissionsCount})</span>
-          </h2>
+        <div className="bg-[#211410] p-4 rounded-3xl border border-[#442f26] shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#3e281e]">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-amber-500/20 border border-amber-500/40 rounded-xl">
+                <ImageIcon className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-amber-100 uppercase tracking-wider flex items-center gap-2">
+                  <span>Pending Task Submissions ({pendingSubmissionsCount})</span>
+                </h2>
+                <p className="text-[11px] text-amber-300/70">
+                  Proof, Username, Email & Bulk Approval Control
+                </p>
+              </div>
+            </div>
+
+            {/* Bulk Action Controls */}
+            {pendingSubmissions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAllPendingSubmissions}
+                  className="px-3 py-1.5 bg-[#170c09] hover:bg-[#281610] text-amber-300 border border-[#482f25] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                  <span>
+                    {selectedSubmissionIds.length === pendingSubmissions.length && pendingSubmissions.length > 0
+                      ? 'Deselect All'
+                      : `Select All (${pendingSubmissions.length})`}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleBulkReviewSubmissions('approved')}
+                  disabled={selectedSubmissionIds.length === 0 || bulkProcessing}
+                  className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black text-xs rounded-xl shadow-lg disabled:opacity-40 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>
+                    {bulkProcessing ? 'প্রসেসিং...' : `Bulk Approve (${selectedSubmissionIds.length})`}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleBulkReviewSubmissions('rejected')}
+                  disabled={selectedSubmissionIds.length === 0 || bulkProcessing}
+                  className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-extrabold text-xs rounded-xl disabled:opacity-40 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Bulk Reject</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {pendingSubmissions.length === 0 ? (
-            <p className="text-xs text-amber-300/50 text-center py-6 bg-[#140b08] rounded-2xl border border-[#38251e]">
-              No pending task submissions to review.
-            </p>
+            <div className="text-center py-10 bg-[#140b08] rounded-2xl border border-[#38251e] space-y-2">
+              <CheckCircle className="w-10 h-10 text-emerald-500/40 mx-auto" />
+              <p className="text-xs text-amber-300/70 font-bold">
+                কোনো পেন্ডিং টাস্ক সাবমিশন নেই! (All clear)
+              </p>
+            </div>
           ) : (
             <div className="space-y-3">
-              {pendingSubmissions.map(sub => (
-                <div key={sub.id} className="bg-[#140b08] p-3.5 rounded-2xl border border-[#38251e] space-y-2 text-xs">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-extrabold text-amber-100">{sub.userName || 'User'}</div>
-                      <div className="text-[11px] text-amber-300/60 font-mono">{sub.userEmail}</div>
+              {pendingSubmissions.map(sub => {
+                const task = tasks.find(t => t.id === sub.taskId);
+                const isSelected = selectedSubmissionIds.includes(sub.id);
+
+                return (
+                  <div
+                    key={sub.id}
+                    className={`p-4 rounded-2xl border transition-all space-y-3 text-xs ${
+                      isSelected
+                        ? 'bg-[#25150f] border-amber-500 shadow-lg shadow-amber-500/10'
+                        : 'bg-[#140b08] border-[#38251e] hover:border-[#52372c]'
+                    }`}
+                  >
+                    {/* Header: Checkbox + User Profile (Username & Email) */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        {/* Checkbox for bulk select */}
+                        <label className="mt-0.5 relative flex items-center justify-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectSubmission(sub.id)}
+                            className="w-5 h-5 rounded border-amber-500/50 text-amber-500 focus:ring-0 focus:ring-offset-0 bg-[#0f0705] cursor-pointer accent-amber-500"
+                          />
+                        </label>
+
+                        {/* User Profile Info */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                              <UserIcon className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-black text-amber-100 text-sm flex items-center gap-2">
+                                <span>{sub.userName || 'Unknown User'}</span>
+                                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono font-bold uppercase">
+                                  {sub.status}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-amber-300 font-mono font-semibold flex items-center gap-1">
+                                <Mail className="w-3 h-3 text-amber-400" />
+                                <span>{sub.userEmail || 'No Email Registered'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Submission Date & User ID */}
+                      <div className="text-right font-mono text-[10px] text-amber-300/60 shrink-0">
+                        <div>User ID: {sub.userId}</div>
+                        <div>{new Date(sub.submittedAt).toLocaleString()}</div>
+                      </div>
                     </div>
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono uppercase">
-                      {sub.status}
-                    </span>
+
+                    {/* Task Title & Details */}
+                    <div className="bg-[#1c100c] p-2.5 rounded-xl border border-[#3d2921] flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-extrabold text-amber-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>টাস্ক: {task ? task.title : sub.taskId}</span>
+                      </div>
+                      {task && (
+                        <div className="text-emerald-400 font-black text-xs bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/30">
+                          রিওয়ার্ড: ৳ {task.reward} BDT
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Proof Image Box */}
+                    {sub.proofImageUrl ? (
+                      <div className="space-y-1.5 bg-[#0f0705] p-3 rounded-xl border border-[#36231a]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-300 text-[11px] flex items-center gap-1">
+                            <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                            <span>ইউজার জমাকৃত প্রমাণ (Screenshot Proof):</span>
+                          </span>
+                          <a
+                            href={sub.proofImageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-amber-400 hover:text-amber-300 text-[11px] font-bold underline flex items-center gap-1 font-mono"
+                          >
+                            <span>ফুল স্ক্রিনশট দেখুন</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <div className="relative group max-w-sm">
+                          <img
+                            src={sub.proofImageUrl}
+                            alt="Submission Proof"
+                            className="max-h-52 w-auto rounded-xl border border-[#482f25] object-contain bg-black/60 shadow-md"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-[#170d0a] p-2.5 rounded-xl border border-[#36231a] text-amber-300/60 text-xs italic">
+                        ⚠️ কোনো প্রমাণ ছবি ফাইল পাওয়া যায়নি।
+                      </div>
+                    )}
+
+                    {/* Single Review Actions */}
+                    <div className="flex items-center justify-between pt-1 border-t border-[#2e1c15]">
+                      <div className="text-[11px] text-amber-300/50 font-mono">
+                        ID: {sub.id}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleReviewSubmission(sub.id, 'rejected')}
+                          className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-rose-500/30 cursor-pointer transition-all"
+                        >
+                          <XCircle className="w-4 h-4" /> Reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReviewSubmission(sub.id, 'approved')}
+                          className="bg-emerald-500 text-black font-black px-4 py-1.5 rounded-xl text-xs flex items-center gap-1 hover:bg-emerald-400 shadow-md cursor-pointer transition-all"
+                        >
+                          <CheckCircle className="w-4 h-4" /> Approve & Credit
+                        </button>
+                      </div>
+                    </div>
                   </div>
-
-                  {sub.proofImageUrl && (
-                    <div className="mt-2">
-                      <a href={sub.proofImageUrl} target="_blank" rel="noreferrer" className="block text-amber-400 text-xs underline mb-1 font-mono">
-                        View Full Screenshot Proof ↗
-                      </a>
-                      <img src={sub.proofImageUrl} alt="Proof" className="max-h-40 rounded-xl border border-[#3d2921] object-cover" />
-                    </div>
-                  )}
-
-                  {sub.status === 'pending' && (
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        onClick={() => handleReviewSubmission(sub.id, 'rejected')}
-                        className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-rose-500/30 cursor-pointer"
-                      >
-                        <XCircle className="w-4 h-4" /> Reject
-                      </button>
-                      <button
-                        onClick={() => handleReviewSubmission(sub.id, 'approved')}
-                        className="bg-emerald-500 text-black px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-emerald-400 cursor-pointer"
-                      >
-                        <CheckCircle className="w-4 h-4" /> Approve & Credit
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -810,24 +1053,148 @@ export const AdminView: React.FC = () => {
             )}
           </div>
 
-          <div>
-            <label className="font-bold text-amber-300 flex items-center justify-between mb-1">
-              <span className="flex items-center gap-1.5">
-                <ImageIcon className="w-4 h-4 text-amber-400" />
-                <span>ImgBB API Keys (Multi-Key Rotation & Failover)</span>
-              </span>
-              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono border border-amber-500/30">Auto-Rotate Enabled</span>
-            </label>
-            <textarea
-              rows={3}
-              value={imgbbKey}
-              onChange={e => setImgbbKey(e.target.value)}
-              placeholder="Enter multiple ImgBB API keys separated by commas, spaces, or newlines (e.g. x, y, z)..."
-              className="w-full bg-[#140b08] border border-[#3e2a22] rounded-xl p-2.5 text-amber-100 font-mono text-[11px]"
-            />
-            <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl mt-1.5 text-[11px] text-amber-200 leading-relaxed">
-              💡 <strong className="text-amber-300 font-black">৩টি API Key (যেমন: x, y, z) কিভাবে একসাথে কাজ করে?</strong><br />
-              হ্যাঁ! আপনি ১টি ফিল্ডেই কমা (<code>,</code>) দিয়ে ৩টি বা তার বেশি API Key দিতে পারবেন (যেমন: <code>key1, key2, key3</code>)। আমাদের সিস্টেমে <strong>Smart Failover Rotation</strong> চালু আছে—যদি কোনো কারণে <code>z</code> বা যেকোনো একটি কি (Key) তে error বা limit শেষ হয়ে যায়, সিস্টেম স্বয়ংক্রিয়ভাবে সেটি বাদ দিয়ে পরের একটিভ key দিয়ে ছবি আপলোড করবে! কোনো কি বাদ যাবে না।
+          {/* Dedicated ImgBB API Key Management Table */}
+          <div className="bg-[#1a0f0a] border-2 border-amber-500/40 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-500/20">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-500/20 border border-amber-500/40 rounded-xl">
+                  <ImageIcon className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-amber-100 text-base flex items-center gap-2">
+                    <span>ImgBB API Keys Table</span>
+                  </h3>
+                  <p className="text-[11px] text-amber-200/80">
+                    ব্যর্থ কি-গুলো লাল দেখাবে এবং বাদ যাবে। শুধু সক্রিয় (Active) কি দিয়ে ছবি আপলোড হবে।
+                  </p>
+                </div>
+              </div>
+
+              {/* Key Counter Badges */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-xl text-[11px] font-mono text-emerald-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Active: <strong>{imgbbKeysList.filter(k => k.status === 'active').length}</strong></span>
+                </div>
+                <div className="bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-xl text-[11px] font-mono text-red-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  <span>Failed: <strong>{imgbbKeysList.filter(k => k.status === 'failed').length}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Add Keys Box & Test All Button */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="text"
+                value={newImgbbInput}
+                onChange={e => setNewImgbbInput(e.target.value)}
+                placeholder="নতুন ImgBB API Key লিখুন (কমা দিয়ে একাধিক key দিতে পারেন)..."
+                className="flex-1 bg-[#120a07] border border-[#3e2a22] rounded-xl px-3 py-2 text-amber-100 text-xs font-mono focus:border-amber-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleAddImgbbKeys}
+                disabled={addingKeys || !newImgbbInput.trim()}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold text-xs rounded-xl hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{addingKeys ? 'যোগ হচ্ছে...' : 'কি যোগ করুন'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleTestAllImgbbKeys}
+                disabled={testingKeys || imgbbKeysList.length === 0}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-extrabold text-xs rounded-xl hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <RefreshCw className={`w-4 h-4 ${testingKeys ? 'animate-spin' : ''}`} />
+                <span>{testingKeys ? 'টেস্ট চলছে...' : 'সব কি লাইভ টেস্ট করুন'}</span>
+              </button>
+            </div>
+
+            {/* Table View */}
+            <div className="overflow-x-auto rounded-2xl border border-[#3a251c] bg-[#120a07]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-[#24150f] text-amber-300 font-extrabold border-b border-[#3a251c] uppercase tracking-wider text-[11px]">
+                    <th className="p-3 text-center w-12">No</th>
+                    <th className="p-3">ImgBB API Key</th>
+                    <th className="p-3 text-center">Status (অবস্থা)</th>
+                    <th className="p-3 text-right">Actions (অ্যাকশন)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2a1a13] text-amber-100 font-mono">
+                  {imgbbKeysList.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-amber-300/60 text-xs font-sans">
+                        কোনো ImgBB Key পাওয়া যায়নি। উপরে নতুন key বসিয়ে "কি যোগ করুন" এ ক্লিক করুন।
+                      </td>
+                    </tr>
+                  ) : (
+                    imgbbKeysList.map((item, idx) => (
+                      <tr key={item.id || idx} className="hover:bg-[#1f120c] transition-colors">
+                        <td className="p-3 text-center font-bold text-amber-400 font-mono">
+                          {idx + 1}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex flex-col">
+                            <span className="font-mono text-amber-200 text-xs tracking-wider select-all font-bold">
+                              {item.key}
+                            </span>
+                            {item.failReason && item.status === 'failed' && (
+                              <span className="text-[10px] text-red-400 font-sans mt-0.5">
+                                ⚠️ কারণ: {item.failReason}
+                              </span>
+                            )}
+                            {item.lastTested && (
+                              <span className="text-[9px] text-amber-300/40 font-sans">
+                                সর্বশেষ টেস্ট: {new Date(item.lastTested).toLocaleTimeString()}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-center font-sans">
+                          {item.status === 'active' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm">
+                              <span className="w-2 h-2 rounded-full bg-red-400" />
+                              <span>Failed</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-sans">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleImgbbKey(item.id, item.status)}
+                              title={item.status === 'active' ? 'Mark as Failed' : 'Mark as Active'}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold cursor-pointer transition-all ${
+                                item.status === 'active'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
+                                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+                              }`}
+                            >
+                              {item.status === 'active' ? 'ব্যর্থ চিহ্নিত করুন' : 'সক্রিয় করুন'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteImgbbKey(item.id)}
+                              className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-all cursor-pointer"
+                              title="মুছে ফেলুন"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
