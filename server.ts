@@ -40,7 +40,7 @@ let systemSettings: SystemSettings = {
   rechargeIntervalHours: 6,
   defaultHitDamage: 0.5,
   adminEmail: 'admin@gmail.com',
-  tutorialFbVideoUrl: 'https://www.facebook.com/reel/1148805566373760',
+  tutorialFbVideoUrl: 'https://www.facebook.com/reel/3457251397779299/?app=fbl',
   supportTelegramUrl: 'https://t.me/xnhelpline',
   channelTelegramUrl: 'https://t.me/xnrewared',
   popupWelcomeText: 'ভিডিও দেখুন! (Tutorial)',
@@ -575,7 +575,7 @@ async function loadSystemSettingsFromSupabase(): Promise<void> {
       if (data.resend_used_today !== undefined) systemSettings.resendUsedToday = Number(data.resend_used_today) || 0;
       if (data.recharge_interval_hours !== undefined) systemSettings.rechargeIntervalHours = Number(data.recharge_interval_hours) || 6;
       if (data.default_hit_damage !== undefined) systemSettings.defaultHitDamage = Number(data.default_hit_damage) || 0.5;
-      if (data.tutorial_fb_video_url !== undefined && data.tutorial_fb_video_url) systemSettings.tutorialFbVideoUrl = data.tutorial_fb_video_url;
+      if (data.tutorial_fb_video_url !== undefined && data.tutorial_fb_video_url && !data.tutorial_fb_video_url.includes('1148805566373760')) systemSettings.tutorialFbVideoUrl = data.tutorial_fb_video_url;
       if (data.support_telegram_url !== undefined && data.support_telegram_url) systemSettings.supportTelegramUrl = data.support_telegram_url;
       if (data.channel_telegram_url !== undefined && data.channel_telegram_url) systemSettings.channelTelegramUrl = data.channel_telegram_url;
       if (data.popup_welcome_text !== undefined && data.popup_welcome_text) systemSettings.popupWelcomeText = data.popup_welcome_text;
@@ -1836,7 +1836,7 @@ app.get('/api/settings/public', async (req, res) => {
   res.json({
     success: true,
     settings: {
-      tutorialFbVideoUrl: systemSettings.tutorialFbVideoUrl || 'https://www.facebook.com/reel/1148805566373760',
+      tutorialFbVideoUrl: systemSettings.tutorialFbVideoUrl || 'https://www.facebook.com/reel/3457251397779299/?app=fbl',
       supportTelegramUrl: systemSettings.supportTelegramUrl || 'https://t.me/xnhelpline',
       channelTelegramUrl: systemSettings.channelTelegramUrl || 'https://t.me/xnrewared',
       popupWelcomeText: systemSettings.popupWelcomeText || 'ভিডিও দেখুন! (Tutorial)',

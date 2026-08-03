@@ -222,7 +222,7 @@ export const AdminView: React.FC = () => {
       setImgbbKey(res.settings.imgbbApiKey || '');
       setBrevoKey(res.settings.brevoApiKey || '');
       setResendKey(res.settings.resendApiKey || '');
-      setFbVideoUrl(res.settings.tutorialFbVideoUrl || 'https://www.facebook.com/reel/1148805566373760');
+      setFbVideoUrl(res.settings.tutorialFbVideoUrl || 'https://www.facebook.com/reel/3457251397779299/?app=fbl');
       setSupportUrl(res.settings.supportTelegramUrl || 'https://t.me/xnhelpline');
       setChannelUrl(res.settings.channelTelegramUrl || 'https://t.me/xnrewared');
       setWelcomeText(res.settings.popupWelcomeText || 'ভিডিও দেখুন! (Tutorial)');

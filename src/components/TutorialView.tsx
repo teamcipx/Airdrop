@@ -65,7 +65,7 @@ function getRawFbUrl(rawUrl?: string): string {
 }
 
 export const TutorialView: React.FC<TutorialViewProps> = ({
-  fbVideoUrl = 'https://www.facebook.com/reel/1148805566373760',
+  fbVideoUrl = 'https://www.facebook.com/reel/3457251397779299/?app=fbl',
   onSelectTab,
 }) => {
   const iframeSrc = getFbVideoIframeSrc(fbVideoUrl);
