@@ -1,5 +1,5 @@
-import React from 'react';
-import { Play, ExternalLink, ShieldCheck, Gamepad2, CheckSquare, Wallet, Sparkles, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, ExternalLink, ShieldCheck, Gamepad2, CheckSquare, Wallet, Sparkles, Copy, Check, Share2, Video, Maximize2 } from 'lucide-react';
 import { TabType } from './Navbar';
 
 interface TutorialViewProps {
@@ -40,8 +40,8 @@ function getFbVideoIframeSrc(rawUrl?: string): string {
     if (videoId) return `https://www.youtube.com/embed/${videoId}`;
   }
 
-  // Otherwise, treat as Facebook URL and wrap in video.php plugin
-  return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&t=0`;
+  // Otherwise, treat as Facebook URL and wrap in video.php plugin with explicit height & fit parameters
+  return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&t=0&height=800`;
 }
 
 // Helper to extract clean raw watch URL for "Open directly in FB app"
@@ -70,40 +70,81 @@ export const TutorialView: React.FC<TutorialViewProps> = ({
 }) => {
   const iframeSrc = getFbVideoIframeSrc(fbVideoUrl);
   const rawUrl = getRawFbUrl(fbVideoUrl);
+  const [copied, setCopied] = useState(false);
+  const tutorialLink = 'https://nxpost.online/tutorial';
+
+  const handleCopyLink = () => {
+    const linkToCopy = window.location.origin.includes('localhost') 
+      ? tutorialLink 
+      : `${window.location.origin}/tutorial`;
+    
+    navigator.clipboard.writeText(linkToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   return (
-    <div className="pb-28 pt-4 px-4 max-w-md mx-auto space-y-6 animate-in fade-in duration-300">
+    <div className="pb-28 pt-4 px-3 sm:px-4 max-w-md mx-auto space-y-5 animate-in fade-in duration-300">
       {/* Header Banner */}
-      <div className="text-center space-y-2 bg-gradient-to-b from-[#25150e] to-[#180d09] p-5 rounded-3xl border border-amber-500/40 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="text-center space-y-2 bg-gradient-to-b from-[#281710] to-[#180d09] p-5 rounded-3xl border border-amber-500/50 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
         
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-black uppercase tracking-wider">
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-black uppercase tracking-wider shadow-sm">
           <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-          <span>Official Guide & Video</span>
+          <span>Official Video Guide</span>
         </div>
         
-        <h1 className="text-2xl font-black text-amber-100 tracking-tight">
-          ভিডিও দেখুন! (Tutorial)
+        <h1 className="text-2xl font-black text-amber-100 tracking-tight flex items-center justify-center gap-2">
+          <Video className="w-6 h-6 text-amber-400" />
+          <span>ভিডিও টিউটোরিয়াল</span>
         </h1>
         <p className="text-xs text-amber-300/80 leading-relaxed font-sans font-medium">
-          কিভাবে কাজ করবেন, কয়েন আয় করবেন এবং বিকাশ/নগদে টাকা উত্তোলন করবেন তার পূর্ণাঙ্গ ভিডিও টিউটোরিয়াল এখানে দেখুন!
+          কীভাবে টাস্ক পূরণ করবেন, এয়ারড্রপ মাইন করবেন এবং সরাসরি বিকাশ/নগদে ক্যাশআউট করবেন তা নিচের ভিডিওতে দেখুন!
         </p>
+
+        {/* Shareable Tutorial Link Box */}
+        <div className="pt-2">
+          <div className="bg-[#120a07] p-2.5 rounded-2xl border border-amber-500/30 flex items-center justify-between gap-2 shadow-inner">
+            <div className="flex items-center gap-2 overflow-hidden px-1">
+              <Share2 className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-mono font-bold text-amber-200 truncate">
+                nxpost.online/tutorial
+              </span>
+            </div>
+            <button
+              onClick={handleCopyLink}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>কপি হয়েছে!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>লিঙ্ক কপি</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Video Player Container (9:16 Vertical Reel Format / Responsive) */}
-      <div className="bg-[#140b08] p-3 rounded-3xl border-2 border-amber-500/50 shadow-[0_10px_30px_rgba(0,0,0,0.8)] space-y-3">
+      {/* Video Player Container (Tall Vertical Format: h-[640px] sm:h-[720px] so bottom video controls are NOT cut off) */}
+      <div className="bg-[#140b08] p-2.5 sm:p-3 rounded-3xl border-2 border-amber-500/60 shadow-[0_12px_35px_rgba(0,0,0,0.85)] space-y-3">
         <div className="flex items-center justify-between px-2 py-1 border-b border-[#3e2316]">
           <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
             <Play className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-            <span>Facebook Short / Reel Video</span>
+            <span>Facebook Short / Vertical Reel</span>
           </span>
-          <span className="text-[10px] font-mono text-amber-400/70 bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-500/30">
-            HD Stream
+          <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-md border border-amber-500/40 font-bold">
+            Full Height HD
           </span>
         </div>
 
-        {/* Embedded Video Iframe */}
-        <div className="relative w-full aspect-[9/16] max-h-[520px] rounded-2xl overflow-hidden bg-black border border-[#4a2818] shadow-inner flex items-center justify-center">
+        {/* Embedded Video Iframe - Tall 9:16 layout without restrictive max-h so bottom is completely visible */}
+        <div className="relative w-full h-[620px] sm:h-[700px] rounded-2xl overflow-hidden bg-black border border-[#4a2818] shadow-2xl flex items-center justify-center">
           <iframe
             src={iframeSrc}
             title="XN Reward Tutorial Video"
@@ -114,32 +155,32 @@ export const TutorialView: React.FC<TutorialViewProps> = ({
             frameBorder="0"
             allowFullScreen={true}
             allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-            className="w-full h-full object-cover"
+            className="w-full h-full"
           />
         </div>
 
-        {/* Fallback & Direct App Opener */}
-        <div className="pt-1">
+        {/* Direct App Opener & Troubleshooting */}
+        <div className="pt-1 space-y-2">
           <a
             href={rawUrl}
             target="_blank"
             rel="noreferrer"
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#1877f2] to-[#0d55b8] hover:from-[#1b84ff] hover:to-[#1877f2] text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98"
+            className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#1877f2] via-[#1569d6] to-[#0d55b8] hover:from-[#1b84ff] hover:to-[#1877f2] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 border border-blue-400/40"
           >
             <ExternalLink className="w-4 h-4 shrink-0" />
-            <span>ফেইসবুক অ্যাপে সরাসরি ভিডিও দেখুন (Open in FB App) ↗</span>
+            <span>ফেইসবুক অ্যাপে ফুল স্ক্রিনে দেখুন (Open in FB App) ↗</span>
           </a>
-          <p className="text-[11px] text-amber-400/70 text-center mt-1.5 font-sans">
-            💡 বিঃদ্রঃ ভিডিও লোড হতে সময় লাগলে উপরের নীল বাটনে ক্লিক করে সরাসরি ফেইসবুকে দেখুন।
+          <p className="text-[11px] text-amber-300/70 text-center font-sans font-medium px-1">
+            💡 যদি ব্রাউজারে ভিডিও লোড হতে দেরি হয়, তাহলে ওপরের নীল বাটনে ক্লিক করে ফেসবুক অ্যাপেই সম্পূর্ণ টিউটোরিয়াল দেখে নিতে পারেন।
           </p>
         </div>
       </div>
 
       {/* Quick 3-Step Earning Summary Cards */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-black text-amber-200 uppercase tracking-wider px-1 flex items-center gap-1.5">
+      <div className="space-y-3 pt-1">
+        <h3 className="text-xs font-black text-amber-200 uppercase tracking-wider px-1 flex items-center gap-1.5">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>৩টি সহজ নিয়মে প্রতিদিন আয় করুন</span>
+          <span>৩টি সহজ উপায়ে প্রতিদিন টাকা ইনকাম করুন</span>
         </h3>
 
         <div className="bg-[#21120b] p-3.5 rounded-2xl border border-[#4a2818] flex items-start gap-3 shadow-md">
@@ -195,7 +236,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({
           className="py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs shadow-lg hover:from-amber-400 hover:to-orange-400 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
         >
           <Gamepad2 className="w-4 h-4" />
-          <span>মাইনিং করুন</span>
+          <span>মাইনিং শুরু করুন</span>
         </button>
 
         <button
@@ -203,9 +244,10 @@ export const TutorialView: React.FC<TutorialViewProps> = ({
           className="py-3 px-4 rounded-2xl bg-[#25150e] border border-amber-500/50 hover:border-amber-400 text-amber-100 font-black text-xs shadow-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
         >
           <CheckSquare className="w-4 h-4 text-amber-400" />
-          <span>টাস্ক দেখুন</span>
+          <span>টাস্ক পূরণ করুন</span>
         </button>
       </div>
     </div>
   );
 };
+

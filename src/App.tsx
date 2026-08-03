@@ -35,7 +35,41 @@ export default function App() {
     }
     return null;
   });
-  const [activeTab, setActiveTab] = useState<TabType>('airdrop');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const path = window.location.pathname.toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    if (path.includes('/tutorial') || path === '/tutorial' || params.get('tab') === 'tutorial') {
+      return 'tutorial';
+    }
+    return 'airdrop';
+  });
+
+  // Keep browser address bar in sync with route paths like /tutorial
+  useEffect(() => {
+    if (activeTab === 'tutorial') {
+      if (!window.location.pathname.toLowerCase().includes('/tutorial')) {
+        window.history.pushState({}, '', '/tutorial');
+      }
+    } else {
+      if (window.location.pathname.toLowerCase().includes('/tutorial')) {
+        window.history.pushState({}, '', '/');
+      }
+    }
+  }, [activeTab]);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path.includes('/tutorial') || path === '/tutorial') {
+        setActiveTab('tutorial');
+      } else {
+        setActiveTab('airdrop');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [urlRefCode, setUrlRefCode] = useState<string>('');
   const [showOnboarding, setShowOnboarding] = useState(() => {
