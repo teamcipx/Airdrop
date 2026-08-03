@@ -1017,25 +1017,30 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'এই জিমেইল (Gmail) দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে! নতুন করে রেজিস্টার না করে অনুগ্রহ করে লগইন করুন।' });
   }
 
-  // 1 Account Per Device Restriction Rule (Strict Enforcement: checks both ID and Hardware Fingerprint)
-  if ((deviceId && deviceId.trim() !== '') || (deviceName && deviceName.trim() !== '')) {
+  // 1 Account Per Device Restriction Rule (Strict Enforcement by unique Device ID)
+  // Note: We check unique deviceId ONLY. IP address & shared network names are NOT blocked, so multiple users on the same IP/Wi-Fi can register on separate devices!
+  if (deviceId && deviceId.trim() !== '') {
+    const cleanDevId = deviceId.trim();
     let deviceAlreadyUsed = false;
+
+    // Check memory cache
     for (const u of mockUsers.values()) {
-      if ((deviceId && u.deviceId === deviceId || (deviceName && u.deviceName && u.deviceName.toLowerCase() === deviceName.toLowerCase() && !deviceName.startsWith('Browser Device [0x0'))) && u.email !== cleanEmail) {
+      if (u.deviceId === cleanDevId && u.email !== cleanEmail) {
         deviceAlreadyUsed = true;
         break;
       }
     }
 
+    // Check Supabase database
     if (!deviceAlreadyUsed) {
       try {
-        const query = supabase.from('users').select('id, email');
-        if (deviceId && deviceName) {
-          const { data: devUsers } = await query.or(`device_id.eq.${deviceId},device_name.ilike.${deviceName}`);
-          if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) deviceAlreadyUsed = true;
-        } else if (deviceId) {
-          const { data: devUsers } = await query.eq('device_id', deviceId);
-          if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) deviceAlreadyUsed = true;
+        const { data: devUsers } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('device_id', cleanDevId);
+
+        if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) {
+          deviceAlreadyUsed = true;
         }
       } catch (err) {
         console.error('Supabase check device_id error:', err);
@@ -1055,15 +1060,15 @@ app.post('/api/auth/register', async (req, res) => {
     const referrerUser = await getUserById(referralCode);
 
     if (referrerUser) {
-      // Check Anti-Self Referral Rule (Device ID or Device Name/fingerprint match or same email)
-      const isDeviceMatch = 
+      // Check Anti-Self Referral Rule (Device ID or same email match)
+      // IP address is not checked so friends/family on the same Wi-Fi/IP can refer each other on separate devices!
+      const isSelfReferral = 
         (deviceId && referrerUser.deviceId === deviceId) ||
-        (deviceName && referrerUser.deviceName && referrerUser.deviceName.toLowerCase() === deviceName.toLowerCase()) ||
         (referrerUser.email.toLowerCase() === cleanEmail);
 
-      if (isDeviceMatch) {
+      if (isSelfReferral) {
         return res.status(400).json({
-          error: 'রেফার ব্যর্থ: একই ডিভাইস বা একই ডিভাইসের নাম (Same Device Fingerprint) থেকে নিজের রেফার ব্যবহার করা যাবে না! (Anti-Self Referral Protection)'
+          error: 'রেফার ব্যর্থ: একই ডিভাইস থেকে নিজের রেফার ব্যবহার করা যাবে না! (Anti-Self Referral Protection)'
         });
       }
 
