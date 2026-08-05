@@ -74,9 +74,20 @@ export interface ImgbbKeyItem {
   createdAt?: string;
 }
 
+export interface FreeimageKeyItem {
+  id: string;
+  key: string;
+  status: 'active' | 'failed';
+  failReason?: string;
+  lastTested?: string;
+  createdAt?: string;
+}
+
 export interface SystemSettings {
   imgbbApiKey: string;
   imgbbKeysList?: ImgbbKeyItem[];
+  freeimageApiKey?: string;
+  freeimageKeysList?: FreeimageKeyItem[];
   brevoApiKey: string;
   brevoDailyLimit: number;
   brevoUsedToday: number;

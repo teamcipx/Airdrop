@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SystemSettings, TaskSubmission, WithdrawalRecord, User, Task, ImgbbKeyItem } from '../types';
+import { SystemSettings, TaskSubmission, WithdrawalRecord, User, Task, ImgbbKeyItem, FreeimageKeyItem } from '../types';
 import {
   fetchAdminSettingsApi,
   updateAdminSettingsApi,
@@ -22,6 +22,11 @@ import {
   toggleImgbbKeyStatusApi,
   deleteImgbbKeyApi,
   testAllImgbbKeysApi,
+  fetchFreeimageKeysApi,
+  addFreeimageKeysApi,
+  toggleFreeimageKeyStatusApi,
+  deleteFreeimageKeyApi,
+  testAllFreeimageKeysApi,
 } from '../lib/api';
 import { ShieldCheck, Key, Mail, CheckCircle, XCircle, Plus, Sparkles, Image as ImageIcon, Wallet, Lock, RefreshCw, Users, Search, Ban, Trash2, Coins, UserPlus, Edit3, CheckSquare, User as UserIcon, ExternalLink } from 'lucide-react';
 
@@ -43,8 +48,15 @@ export const AdminView: React.FC = () => {
   const [newImgbbInput, setNewImgbbInput] = useState('');
   const [testingKeys, setTestingKeys] = useState(false);
   const [addingKeys, setAddingKeys] = useState(false);
+
+  const [freeimageKeysList, setFreeimageKeysList] = useState<FreeimageKeyItem[]>([]);
+  const [newFreeimageInput, setNewFreeimageInput] = useState('');
+  const [testingFreeimageKeys, setTestingFreeimageKeys] = useState(false);
+  const [addingFreeimageKeys, setAddingFreeimageKeys] = useState(false);
+
   const [brevoKey, setBrevoKey] = useState('');
   const [resendKey, setResendKey] = useState('');
+  const [freeimageKey, setFreeimageKey] = useState('');
   const [fbVideoUrl, setFbVideoUrl] = useState('');
   const [supportUrl, setSupportUrl] = useState('');
   const [channelUrl, setChannelUrl] = useState('');
@@ -215,6 +227,57 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const loadFreeimageKeys = async () => {
+    const res = await fetchFreeimageKeysApi();
+    if (res.success && res.keys) {
+      setFreeimageKeysList(res.keys);
+    }
+  };
+
+  const handleAddFreeimageKeys = async () => {
+    if (!newFreeimageInput.trim()) return;
+    setAddingFreeimageKeys(true);
+    const res = await addFreeimageKeysApi(newFreeimageInput);
+    setAddingFreeimageKeys(false);
+    if (res.success) {
+      setFreeimageKeysList(res.keys || []);
+      setNewFreeimageInput('');
+      setMessage(res.message || 'FreeImage Key(s) added successfully!');
+    } else {
+      setMessage(`Error: ${res.error}`);
+    }
+  };
+
+  const handleToggleFreeimageKey = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'active' ? 'failed' : 'active';
+    const res = await toggleFreeimageKeyStatusApi(id, newStatus);
+    if (res.success) {
+      setFreeimageKeysList(res.keys || []);
+      setMessage(`FreeImage Key status changed to ${newStatus.toUpperCase()}`);
+    }
+  };
+
+  const handleDeleteFreeimageKey = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this FreeImage.Host API key?')) return;
+    const res = await deleteFreeimageKeyApi(id);
+    if (res.success) {
+      setFreeimageKeysList(res.keys || []);
+      setMessage('FreeImage.Host Key deleted successfully!');
+    }
+  };
+
+  const handleTestAllFreeimageKeys = async () => {
+    setTestingFreeimageKeys(true);
+    const res = await testAllFreeimageKeysApi();
+    setTestingFreeimageKeys(false);
+    if (res.success) {
+      setFreeimageKeysList(res.keys || []);
+      setMessage(res.message);
+    } else {
+      setMessage('Failed to test FreeImage keys.');
+    }
+  };
+
   const loadSettings = async () => {
     const res = await fetchAdminSettingsApi();
     if (res.success && res.settings) {
@@ -222,6 +285,7 @@ export const AdminView: React.FC = () => {
       setImgbbKey(res.settings.imgbbApiKey || '');
       setBrevoKey(res.settings.brevoApiKey || '');
       setResendKey(res.settings.resendApiKey || '');
+      setFreeimageKey(res.settings.freeimageApiKey || '6D2B7A6A60205EE992E1179E943A40A6');
       setFbVideoUrl(res.settings.tutorialFbVideoUrl || 'https://www.facebook.com/reel/3457251397779299/?app=fbl');
       setSupportUrl(res.settings.supportTelegramUrl || 'https://t.me/xnhelpline');
       setChannelUrl(res.settings.channelTelegramUrl || 'https://t.me/xnrewared');
@@ -229,6 +293,7 @@ export const AdminView: React.FC = () => {
       setRequireEmailOtp(res.settings.requireEmailOtp !== false);
     }
     loadImgbbKeys();
+    loadFreeimageKeys();
   };
 
   const loadSubmissions = async () => {
@@ -309,6 +374,7 @@ export const AdminView: React.FC = () => {
       imgbbApiKey: imgbbKey.trim(),
       brevoApiKey: brevoKey.trim(),
       resendApiKey: resendKey.trim(),
+      freeimageApiKey: freeimageKey.trim(),
       tutorialFbVideoUrl: fbVideoUrl.trim(),
       supportTelegramUrl: supportUrl.trim(),
       channelTelegramUrl: channelUrl.trim(),
@@ -1198,6 +1264,151 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
 
+          {/* Dedicated FreeImage.Host API Key Management Table */}
+          <div className="bg-[#0f171c] border-2 border-cyan-500/40 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-cyan-500/20">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-cyan-500/20 border border-cyan-500/40 rounded-xl">
+                  <ImageIcon className="w-5 h-5 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-cyan-100 text-base flex items-center gap-2">
+                    <span>FreeImage.Host API Keys Table (ImgBB Fallback)</span>
+                  </h3>
+                  <p className="text-[11px] text-cyan-200/80">
+                    ImgBB ফেইল করলে এই FreeImage.Host কি দিয়ে অটো ছবি আপলোড হবে। একাধিক Key যোগ করে ব্যাকআপ রাখতে পারেন।
+                  </p>
+                </div>
+              </div>
+
+              {/* Key Counter Badges */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-xl text-[11px] font-mono text-emerald-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Active: <strong>{freeimageKeysList.filter(k => k.status === 'active').length}</strong></span>
+                </div>
+                <div className="bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-xl text-[11px] font-mono text-red-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  <span>Failed: <strong>{freeimageKeysList.filter(k => k.status === 'failed').length}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Add Keys Box & Test All Button */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="text"
+                value={newFreeimageInput}
+                onChange={e => setNewFreeimageInput(e.target.value)}
+                placeholder="নতুন FreeImage.Host API Key লিখুন (কমা দিয়ে একাধিক key দিতে পারেন)..."
+                className="flex-1 bg-[#090f14] border border-[#233540] rounded-xl px-3 py-2 text-cyan-100 text-xs font-mono focus:border-cyan-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleAddFreeimageKeys}
+                disabled={addingFreeimageKeys || !newFreeimageInput.trim()}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-extrabold text-xs rounded-xl hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{addingFreeimageKeys ? 'যোগ হচ্ছে...' : 'কি যোগ করুন'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleTestAllFreeimageKeys}
+                disabled={testingFreeimageKeys || freeimageKeysList.length === 0}
+                className="px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-extrabold text-xs rounded-xl hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <RefreshCw className={`w-4 h-4 ${testingFreeimageKeys ? 'animate-spin' : ''}`} />
+                <span>{testingFreeimageKeys ? 'টেস্ট চলছে...' : 'সব FreeImage কি টেস্ট করুন'}</span>
+              </button>
+            </div>
+
+            {/* Table View */}
+            <div className="overflow-x-auto rounded-2xl border border-[#233540] bg-[#090f14]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-[#131f28] text-cyan-300 font-extrabold border-b border-[#233540] uppercase tracking-wider text-[11px]">
+                    <th className="p-3 text-center w-12">No</th>
+                    <th className="p-3">FreeImage.Host API Key</th>
+                    <th className="p-3 text-center">Status (অবস্থা)</th>
+                    <th className="p-3 text-right">Actions (অ্যাকশন)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#172733] text-cyan-100 font-mono">
+                  {freeimageKeysList.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-cyan-300/60 text-xs font-sans">
+                        কোনো FreeImage Key পাওয়া যায়নি। উপরে নতুন key বসিয়ে "কি যোগ করুন" এ ক্লিক করুন।
+                      </td>
+                    </tr>
+                  ) : (
+                    freeimageKeysList.map((item, idx) => (
+                      <tr key={item.id || idx} className="hover:bg-[#121f29] transition-colors">
+                        <td className="p-3 text-center font-bold text-cyan-400 font-mono">
+                          {idx + 1}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex flex-col">
+                            <span className="font-mono text-cyan-200 text-xs tracking-wider select-all font-bold">
+                              {item.key}
+                            </span>
+                            {item.failReason && item.status === 'failed' && (
+                              <span className="text-[10px] text-red-400 font-sans mt-0.5">
+                                ⚠️ কারণ: {item.failReason}
+                              </span>
+                            )}
+                            {item.lastTested && (
+                              <span className="text-[9px] text-cyan-300/40 font-sans">
+                                সর্বশেষ টেস্ট: {new Date(item.lastTested).toLocaleTimeString()}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-center font-sans">
+                          {item.status === 'active' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm">
+                              <span className="w-2 h-2 rounded-full bg-red-400" />
+                              <span>Failed</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-sans">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFreeimageKey(item.id, item.status)}
+                              title={item.status === 'active' ? 'Mark as Failed' : 'Mark as Active'}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold cursor-pointer transition-all ${
+                                item.status === 'active'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
+                                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+                              }`}
+                            >
+                              {item.status === 'active' ? 'ব্যর্থ চিহ্নিত করুন' : 'সক্রিয় করুন'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFreeimageKey(item.id)}
+                              className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-all cursor-pointer"
+                              title="মুছে ফেলুন"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Email Verification OTP Toggle Button */}
           <div className="bg-[#1c110d] border-2 border-amber-500/50 rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
@@ -1251,6 +1462,28 @@ export const AdminView: React.FC = () => {
               placeholder="re_..."
               className="w-full bg-[#140b08] border border-[#3e2a22] rounded-xl p-2.5 text-amber-100 font-mono"
             />
+          </div>
+
+          <div>
+            <label className="font-bold text-amber-300 flex items-center justify-between mb-1">
+              <span className="flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-cyan-400" />
+                <span>FreeImage.Host API Key (ImgBB Fallback)</span>
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono">
+                Auto Fallback System Enabled
+              </span>
+            </label>
+            <input
+              type="text"
+              value={freeimageKey}
+              onChange={e => setFreeimageKey(e.target.value)}
+              placeholder="6D2B7A6A60205EE992E1179E943A40A6"
+              className="w-full bg-[#140b08] border border-[#3e2a22] rounded-xl p-2.5 text-amber-100 font-mono text-xs"
+            />
+            <p className="text-[11px] text-amber-400/70 mt-1 font-sans">
+              💡 ImgBB এর সব API Key ফেইল মারলে বা লিমিট শেষ হলে অটোমেটিক FreeImage.Host (freeimage.host) ইমেজ হোস্ট হিসেবে ইমেজ আপলোড করবে।
+            </p>
           </div>
 
           <div className="pt-3 border-t border-[#3e2a22]">

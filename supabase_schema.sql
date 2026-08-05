@@ -105,8 +105,17 @@ CREATE TABLE IF NOT EXISTS public.otps (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. IMGBB API KEYS TABLE
+-- 8. IMGBB & FREEIMAGE API KEYS TABLES
 CREATE TABLE IF NOT EXISTS public.imgbb_keys (
+  id VARCHAR(100) PRIMARY KEY,
+  api_key TEXT UNIQUE NOT NULL,
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'failed')),
+  fail_reason TEXT,
+  last_tested TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.freeimage_keys (
   id VARCHAR(100) PRIMARY KEY,
   api_key TEXT UNIQUE NOT NULL,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'failed')),
@@ -155,6 +164,16 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS ban_reason TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_check_in_date VARCHAR(20);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS check_in_streak INT DEFAULT 0;
 ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS require_email_otp BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS freeimage_api_key TEXT DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS public.freeimage_keys (
+  id VARCHAR(100) PRIMARY KEY,
+  api_key TEXT UNIQUE NOT NULL,
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'failed')),
+  fail_reason TEXT,
+  last_tested TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- =========================================================
 -- DEFAULT SEED DATA
@@ -175,6 +194,8 @@ ON CONFLICT (id) DO UPDATE SET require_email_otp = TRUE;
 
 -- Disable RLS for standard API direct access
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.imgbb_keys DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.freeimage_keys DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_submissions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.withdrawals DISABLE ROW LEVEL SECURITY;

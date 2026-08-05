@@ -216,6 +216,45 @@ export async function testAllImgbbKeysApi() {
   return res.json();
 }
 
+export async function fetchFreeimageKeysApi() {
+  const res = await fetch('/api/admin/freeimage-keys');
+  return res.json();
+}
+
+export async function addFreeimageKeysApi(keysInput: string) {
+  const res = await fetch('/api/admin/freeimage-keys/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keysInput }),
+  });
+  return res.json();
+}
+
+export async function toggleFreeimageKeyStatusApi(id: string, status: 'active' | 'failed') {
+  const res = await fetch('/api/admin/freeimage-keys/toggle-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status }),
+  });
+  return res.json();
+}
+
+export async function deleteFreeimageKeyApi(id: string) {
+  const res = await fetch('/api/admin/freeimage-keys/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  return res.json();
+}
+
+export async function testAllFreeimageKeysApi() {
+  const res = await fetch('/api/admin/freeimage-keys/test-all', {
+    method: 'POST',
+  });
+  return res.json();
+}
+
 export async function updateAdminSettingsApi(settings: Partial<SystemSettings>) {
   const res = await fetch('/api/admin/settings', {
     method: 'POST',
