@@ -460,11 +460,28 @@ async function testSingleFreeimageKey(keyItem: FreeimageKeyItem): Promise<{ succ
 
     const response = await fetch('https://freeimage.host/api/1/upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
       body: formData.toString(),
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      if (responseText.includes('forbidden') || responseText.includes('Forbidden') || responseText.includes('<html')) {
+        keyItem.status = 'failed';
+        keyItem.failReason = 'Forbidden (403): FreeImage.Host Cloudflare firewall blocked request';
+        keyItem.lastTested = new Date().toISOString();
+        return { success: false, reason: keyItem.failReason };
+      }
+    }
+
     if (response.ok && data && (data.image?.url || data.image?.display_url || data.data?.url)) {
       keyItem.status = 'active';
       keyItem.failReason = '';
@@ -472,7 +489,7 @@ async function testSingleFreeimageKey(keyItem: FreeimageKeyItem): Promise<{ succ
       return { success: true };
     } else {
       keyItem.status = 'failed';
-      keyItem.failReason = data?.error?.message || data?.status_txt || `HTTP ${response.status}: Key invalid or limit reached`;
+      keyItem.failReason = data?.error?.message || data?.status_txt || `HTTP ${response.status}: Key invalid or blocked`;
       keyItem.lastTested = new Date().toISOString();
       return { success: false, reason: keyItem.failReason };
     }
@@ -482,6 +499,36 @@ async function testSingleFreeimageKey(keyItem: FreeimageKeyItem): Promise<{ succ
     keyItem.lastTested = new Date().toISOString();
     return { success: false, reason: keyItem.failReason };
   }
+}
+
+// Helper: Backup image upload service (TmpFiles) if both ImgBB & FreeImage fail
+async function uploadToTmpFiles(base64Image: string): Promise<string> {
+  try {
+    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    const blob = new Blob([buffer], { type: 'image/png' });
+
+    const formData = new FormData();
+    formData.append('file', blob, 'upload.png');
+
+    const response = await fetch('https://tmpfiles.org/api/v1/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      }
+    });
+
+    const data = await response.json();
+    if (response.ok && data && data.status === 'success' && data.data && data.data.url) {
+      const directUrl = data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+      console.log(`[TmpFiles] Successfully uploaded fallback image: ${directUrl}`);
+      return directUrl;
+    }
+  } catch (err: any) {
+    console.warn('[TmpFiles] Backup upload failed:', err?.message || err);
+  }
+  return base64Image;
 }
 
 // Helper: Upload image to FreeImage.Host (freeimage.host) trying active keys in order
@@ -509,11 +556,30 @@ async function uploadToFreeImageHost(base64Image: string): Promise<string> {
 
       const response = await fetch('https://freeimage.host/api/1/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
         body: formData.toString(),
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText.includes('forbidden') || responseText.includes('Forbidden') || responseText.includes('<html')) {
+          console.warn(`[FreeImageHost] Key ${keyItem.key.slice(0, 6)}... received 403 Forbidden HTML from freeimage.host.`);
+          keyItem.status = 'failed';
+          keyItem.failReason = 'Forbidden (403): FreeImage.Host Cloudflare firewall blocked request';
+          keyItem.lastTested = new Date().toISOString();
+          await syncFreeimageKeysToSupabase();
+          continue;
+        }
+      }
+
       if (response.ok && data && (data.image?.url || data.image?.display_url || data.image?.url_viewer || data.data?.url)) {
         const uploadedUrl = data.image?.url || data.image?.display_url || data.image?.url_viewer || data.data?.url;
         console.log(`[FreeImageHost] Successfully uploaded image to freeimage.host using key ${keyItem.key.slice(0, 6)}...: ${uploadedUrl}`);
@@ -536,8 +602,8 @@ async function uploadToFreeImageHost(base64Image: string): Promise<string> {
     }
   }
 
-  console.warn('[FreeImageHost] All active FreeImage.Host keys failed during upload. Returning base64 fallback.');
-  return base64Image;
+  console.warn('[FreeImageHost] All active FreeImage.Host keys failed during upload. Attempting TmpFiles backup upload...');
+  return await uploadToTmpFiles(base64Image);
 }
 
 // ImgBB Upload Proxy - ONLY uses ACTIVE keys from the table, falls back to FreeImage.Host if all fail
