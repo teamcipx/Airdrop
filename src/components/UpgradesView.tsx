@@ -19,13 +19,14 @@ export const UpgradesView: React.FC<UpgradesViewProps> = ({ user, onUpdateUser, 
       return;
     }
 
+    const costDeducted = type === 'energy' ? energyCost : hitCost;
     setUpgrading(true);
     const res = await upgradeApi(user.id, type);
     setUpgrading(false);
 
     if (res.success && res.user) {
       onUpdateUser(res.user);
-      setMessage(`Upgrade Successful! New level applied.`);
+      setMessage(`Upgrade Successful! Deducted ${costDeducted.toLocaleString()} coins for new level.`);
       setTimeout(() => setMessage(null), 3000);
     } else {
       setMessage(res.error || 'Upgrade failed!');
@@ -33,8 +34,16 @@ export const UpgradesView: React.FC<UpgradesViewProps> = ({ user, onUpdateUser, 
     }
   };
 
-  const energyCost = user ? user.energyLevel * 100 : 100;
-  const hitCost = user ? user.hitLevel * 150 : 150;
+  // Cost calculation formula: Level 1-5: Lvl x 1000, Lvl 6+: +20% compound increase per level above 5
+  const getUpgradeCost = (lvl: number) => {
+    const base = lvl * 1000;
+    if (lvl <= 5) return base;
+    const extraLevels = lvl - 5;
+    return Math.round(base * Math.pow(1.2, extraLevels));
+  };
+
+  const energyCost = user ? getUpgradeCost(user.energyLevel) : 1000;
+  const hitCost = user ? getUpgradeCost(user.hitLevel) : 1000;
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-24 text-amber-50">
@@ -64,7 +73,7 @@ export const UpgradesView: React.FC<UpgradesViewProps> = ({ user, onUpdateUser, 
       {/* Charge Box Upgrade Card */}
       <div className="bg-[#2a1d18]/90 p-4 rounded-3xl border border-[#4a342b] flex items-center justify-between gap-4 shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
             <Zap className="w-6 h-6 fill-amber-400" />
           </div>
 
@@ -78,23 +87,26 @@ export const UpgradesView: React.FC<UpgradesViewProps> = ({ user, onUpdateUser, 
             <p className="text-xs text-amber-300/70 mt-0.5">
               +500 Max Energy ({user ? user.maxEnergy : 1000} → {user ? user.maxEnergy + 500 : 1500} ⚡)
             </p>
+            <p className="text-[10px] text-amber-400/60 mt-1 font-mono">
+              📈 Cost: Lvl 1–5: Lvl × 1k | Lvl 6+: +20% compound per level
+            </p>
           </div>
         </div>
 
         <button
           onClick={() => handleUpgrade('energy')}
           disabled={upgrading || (user ? user.balance < energyCost : false)}
-          className="bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs px-4 py-2.5 rounded-2xl hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-40 cursor-pointer shadow-md active:scale-95 flex flex-col items-center"
+          className="bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs px-4 py-2.5 rounded-2xl hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-40 cursor-pointer shadow-md active:scale-95 flex flex-col items-center shrink-0"
         >
           <span>Upgrade</span>
-          <span className="text-[10px] opacity-80 font-mono">{energyCost} $NXB</span>
+          <span className="text-[10px] opacity-90 font-mono font-black">{energyCost.toLocaleString()} $NXB</span>
         </button>
       </div>
 
       {/* Hit Damage Upgrade Card */}
       <div className="bg-[#2a1d18]/90 p-4 rounded-3xl border border-[#4a342b] flex items-center justify-between gap-4 shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400">
+          <div className="w-12 h-12 rounded-2xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400 shrink-0">
             <Flame className="w-6 h-6 fill-orange-400" />
           </div>
 
@@ -108,16 +120,19 @@ export const UpgradesView: React.FC<UpgradesViewProps> = ({ user, onUpdateUser, 
             <p className="text-xs text-amber-300/70 mt-0.5">
               +0.5 $NXB/tap ({user ? user.hitDamage : 0.5} → {user ? user.hitDamage + 0.5 : 1.0} per tap)
             </p>
+            <p className="text-[10px] text-amber-400/60 mt-1 font-mono">
+              📈 Cost: Lvl 1–5: Lvl × 1k | Lvl 6+: +20% compound per level
+            </p>
           </div>
         </div>
 
         <button
           onClick={() => handleUpgrade('hit')}
           disabled={upgrading || (user ? user.balance < hitCost : false)}
-          className="bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs px-4 py-2.5 rounded-2xl hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-40 cursor-pointer shadow-md active:scale-95 flex flex-col items-center"
+          className="bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs px-4 py-2.5 rounded-2xl hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-40 cursor-pointer shadow-md active:scale-95 flex flex-col items-center shrink-0"
         >
           <span>Upgrade</span>
-          <span className="text-[10px] opacity-80 font-mono">{hitCost} $NXB</span>
+          <span className="text-[10px] opacity-90 font-mono font-black">{hitCost.toLocaleString()} $NXB</span>
         </button>
       </div>
     </div>

@@ -1727,6 +1727,14 @@ app.post('/api/checkin/claim', async (req, res) => {
   });
 });
 
+// Helper: Calculate progressive upgrade cost (Level 1-5: Lvl x 1000, Lvl 6+: +20% compound per level above 5)
+function calculateUpgradeCost(level: number): number {
+  const base = level * 1000;
+  if (level <= 5) return base;
+  const extraLevels = level - 5;
+  return Math.round(base * Math.pow(1.2, extraLevels));
+}
+
 // 7. Game: Upgrades (Charge Box Level UP & Hit Damage Level UP)
 app.post('/api/game/upgrade', async (req, res) => {
   const { userId, upgradeType } = req.body; // 'energy' or 'hit'
@@ -1737,18 +1745,18 @@ app.post('/api/game/upgrade', async (req, res) => {
   }
 
   if (upgradeType === 'energy') {
-    const cost = user.energyLevel * 100;
+    const cost = calculateUpgradeCost(user.energyLevel);
     if (user.balance < cost) {
-      return res.status(400).json({ error: `Insufficient $NXB balance! Needs ${cost} coins.` });
+      return res.status(400).json({ error: `Insufficient $NXB balance! Level ${user.energyLevel} upgrade requires ${cost.toLocaleString()} coins.` });
     }
     user.balance -= cost;
     user.energyLevel += 1;
     user.maxEnergy += 500;
     user.energy = user.maxEnergy; // Fully refills energy on upgrade!
   } else if (upgradeType === 'hit') {
-    const cost = user.hitLevel * 150;
+    const cost = calculateUpgradeCost(user.hitLevel);
     if (user.balance < cost) {
-      return res.status(400).json({ error: `Insufficient $NXB balance! Needs ${cost} coins.` });
+      return res.status(400).json({ error: `Insufficient $NXB balance! Level ${user.hitLevel} upgrade requires ${cost.toLocaleString()} coins.` });
     }
     user.balance -= cost;
     user.hitLevel += 1;
