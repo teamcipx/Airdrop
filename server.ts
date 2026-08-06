@@ -1242,59 +1242,59 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'এই জিমেইল (Gmail) দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা আছে! নতুন করে রেজিস্টার না করে অনুগ্রহ করে লগইন করুন।' });
   }
 
-  // 1 Account Per Device Restriction Rule (Strict Enforcement by unique Device ID)
-  // Note: We check unique deviceId ONLY. IP address & shared network names are NOT blocked, so multiple users on the same IP/Wi-Fi can register on separate devices!
-  if (deviceId && deviceId.trim() !== '') {
-    const cleanDevId = deviceId.trim();
-    let deviceAlreadyUsed = false;
-
-    // Check memory cache
-    for (const u of mockUsers.values()) {
-      if (u.deviceId === cleanDevId && u.email !== cleanEmail) {
-        deviceAlreadyUsed = true;
-        break;
-      }
-    }
-
-    // Check Supabase database
-    if (!deviceAlreadyUsed) {
-      try {
-        const { data: devUsers } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('device_id', cleanDevId);
-
-        if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) {
-          deviceAlreadyUsed = true;
-        }
-      } catch (err) {
-        console.error('Supabase check device_id error:', err);
-      }
-    }
-
-    if (deviceAlreadyUsed) {
-      return res.status(400).json({
-        error: 'একটি ডিভাইস থেকে শুধুমাত্র ১টি অ্যাকাউন্ট তৈরি করা যাবে! আপনার এই ডিভাইসে ইতিমধ্যে একটি অ্যাকাউন্ট রয়েছে।'
-      });
-    }
-  }
-
-  // Referral Anti-Fraud Check
+  // Referral & Security Check
+  // Security restriction ONLY applies when opening an account WITH a referral code (Referral Anti-Fraud)
+  // IP address is NEVER blocked so multiple users/devices on the same IP/Wi-Fi work seamlessly!
   let referredByUserId: string | undefined = undefined;
-  if (referralCode) {
-    const referrerUser = await getUserById(referralCode);
+  if (referralCode && referralCode.trim() !== '') {
+    const referrerUser = await getUserById(referralCode.trim());
 
     if (referrerUser) {
-      // Check Anti-Self Referral Rule (Device ID or same email match)
-      // IP address is not checked so friends/family on the same Wi-Fi/IP can refer each other on separate devices!
+      // 1. Anti-Self Referral Check (Same device or same email match)
       const isSelfReferral = 
-        (deviceId && referrerUser.deviceId === deviceId) ||
+        (deviceId && deviceId.trim() !== '' && referrerUser.deviceId === deviceId.trim()) ||
         (referrerUser.email.toLowerCase() === cleanEmail);
 
       if (isSelfReferral) {
         return res.status(400).json({
           error: 'রেফার ব্যর্থ: একই ডিভাইস থেকে নিজের রেফার ব্যবহার করা যাবে না! (Anti-Self Referral Protection)'
         });
+      }
+
+      // 2. 1 Account Per Device Restriction for Referral Accounts
+      if (deviceId && deviceId.trim() !== '') {
+        const cleanDevId = deviceId.trim();
+        let deviceAlreadyUsed = false;
+
+        // Check memory cache
+        for (const u of mockUsers.values()) {
+          if (u.deviceId === cleanDevId && u.email !== cleanEmail) {
+            deviceAlreadyUsed = true;
+            break;
+          }
+        }
+
+        // Check Supabase database
+        if (!deviceAlreadyUsed) {
+          try {
+            const { data: devUsers } = await supabase
+              .from('users')
+              .select('id, email')
+              .eq('device_id', cleanDevId);
+
+            if (devUsers && devUsers.some((u: any) => u.email !== cleanEmail)) {
+              deviceAlreadyUsed = true;
+            }
+          } catch (err) {
+            console.error('Supabase check device_id error:', err);
+          }
+        }
+
+        if (deviceAlreadyUsed) {
+          return res.status(400).json({
+            error: 'রেফারাল ব্যবহারের ক্ষেত্রে ১টি ডিভাইসে ১টির বেশি রেফার অ্যাকাউন্ট তৈরি করা যাবে না!'
+          });
+        }
       }
 
       referredByUserId = referrerUser.id;
@@ -1478,37 +1478,6 @@ app.post('/api/auth/login', async (req, res) => {
   // Password verification check
   if (dbUserPassword && dbUserPassword !== password) {
     return res.status(401).json({ error: 'Incorrect password! Please check and try again.' });
-  }
-
-  // 1 Account Per Device Restriction Rule on Login
-  if (deviceId && deviceId.trim() !== '') {
-    let deviceAlreadyUsedByOther = false;
-    for (const u of mockUsers.values()) {
-      if (u.deviceId === deviceId && u.email !== cleanEmail && u.id !== user.id) {
-        deviceAlreadyUsedByOther = true;
-        break;
-      }
-    }
-    if (!deviceAlreadyUsedByOther) {
-      try {
-        const { data: devUsers } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('device_id', deviceId);
-        if (devUsers && devUsers.length > 0) {
-          if (devUsers.some((u: any) => u.email !== cleanEmail && u.id !== user?.id)) {
-            deviceAlreadyUsedByOther = true;
-          }
-        }
-      } catch (err) {
-        console.error('Supabase check login device_id error:', err);
-      }
-    }
-    if (deviceAlreadyUsedByOther) {
-      return res.status(400).json({
-        error: 'একটি ডিভাইস থেকে শুধুমাত্র ১টি অ্যাকাউন্ট ব্যবহার করা যাবে! আপনার এই ডিভাইসে ইতিমধ্যে অন্য একটি অ্যাকাউন্ট রয়েছে।'
-      });
-    }
   }
 
   if (deviceId && !user.deviceId) user.deviceId = deviceId;
